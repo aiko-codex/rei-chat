@@ -1,4 +1,4 @@
-import { Phone, Video, Settings } from 'lucide-react';
+import { Headphones, Phone, Video, Settings } from 'lucide-react';
 import { Avatar, AvatarBadge, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import type { User } from '@/lib/types';
@@ -7,13 +7,20 @@ interface ChatHeaderProps {
   peer: User;
   onVoiceCall: () => void;
   onVideoCall: () => void;
+  onOpenVoiceChannel: () => void;
   onOpenSettings: () => void;
 }
 
-export function ChatHeader({ peer, onVoiceCall, onVideoCall, onOpenSettings }: ChatHeaderProps) {
+export function ChatHeader({
+  peer,
+  onVoiceCall,
+  onVideoCall,
+  onOpenVoiceChannel,
+  onOpenSettings,
+}: ChatHeaderProps) {
   return (
     <header
-      className="flex items-center gap-3 border-b bg-background/95 px-4 py-2.5 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+      className="flex items-center gap-3 border-b bg-background/95 px-4 py-2.5 backdrop-blur supports-backdrop-filter:bg-background/80"
       data-testid="chat-header"
     >
       <Avatar size="lg">
@@ -33,6 +40,9 @@ export function ChatHeader({ peer, onVoiceCall, onVideoCall, onOpenSettings }: C
       </Button>
       <Button variant="ghost" size="icon" className="cursor-pointer" onClick={onVideoCall} aria-label="Video call" data-testid="video-call-btn">
         <Video />
+      </Button>
+      <Button variant="ghost" size="icon" className="cursor-pointer" onClick={onOpenVoiceChannel} aria-label="Voice channel" data-testid="voice-channel-btn">
+        <Headphones />
       </Button>
       <Button variant="ghost" size="icon" className="cursor-pointer" onClick={onOpenSettings} aria-label="Settings" data-testid="settings-btn">
         <Settings />

@@ -15,9 +15,10 @@ function dayLabel(ts: number) {
 interface MessageListProps {
   messages: Message[];
   currentUserId: UserId;
+  onLongPress: (message: Message) => void;
 }
 
-export function MessageList({ messages, currentUserId }: MessageListProps) {
+export function MessageList({ messages, currentUserId, onLongPress }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export function MessageList({ messages, currentUserId }: MessageListProps) {
                 message={msg}
                 isMine={msg.senderId === currentUserId}
                 isGroupEnd={isGroupEnd}
+                onLongPress={onLongPress}
               />
             </div>
           );
