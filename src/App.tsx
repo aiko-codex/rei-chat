@@ -50,6 +50,7 @@ export default function App() {
     const leaveVoiceRoom = useVoiceRoomStore((s) => s.leave);
 
     const unlocked = screen !== 'lock';
+    const peerStatus = useChatStore((s) => s.status);
 
     // connection + history live at app level: receiving works on any screen
     useEffect(() => {
@@ -58,6 +59,32 @@ export default function App() {
         startPeerService();
         return () => stopPeerService();
     }, [unlocked, paired]);
+
+    // Reliable delivery independent of the P2P link: every message is also
+    // written to the encrypted server store, so poll it on an interval. This is
+    // what lets her messages arrive when the peers aren't directly connected
+    // (one side refreshed, backgrounded, on cellular, or still negotiating).
+    // Poll fast while disconnected; slow safety-net cadence once P2P is live
+    // (messages then arrive instantly over the data channel). Also sync the
+    // moment the tab regains focus.
+    useEffect(() => {
+        if (!unlocked || !paired || !SIGNAL_URL) return;
+        const tick = () => {
+            if (document.visibilityState === 'visible') {
+                void useChatStore.getState().syncHistory();
+            }
+        };
+        const delay = peerStatus === 'connected' ? 15_000 : 3_000;
+        const id = setInterval(tick, delay);
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') tick();
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            clearInterval(id);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, [unlocked, paired, peerStatus]);
 
     // keep the unlock grace window alive while the app is open + visible, so an
     // in-use session never locks mid-chat; if it lapsed while away, re-lock
