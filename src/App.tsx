@@ -17,6 +17,7 @@ import {
 import { isPaired, SIGNAL_URL } from '@/lib/config';
 import { isUnlockFresh, touchUnlock } from '@/lib/pin';
 import { syncTodoReminders } from '@/lib/todo-reminders';
+import { setupPWAUpdates } from '@/lib/pwa-update';
 import { joinCodeFromUrl } from '@/lib/pairing';
 import { useChatStore } from '@/store/chat-store';
 import { useCallStore } from '@/store/call-store';
@@ -51,6 +52,11 @@ export default function App() {
 
     const unlocked = screen !== 'lock';
     const peerStatus = useChatStore((s) => s.status);
+
+    // register the service-worker update prompt + report our build to the DB
+    useEffect(() => {
+        setupPWAUpdates();
+    }, []);
 
     // connection + history live at app level: receiving works on any screen
     useEffect(() => {
@@ -240,7 +246,7 @@ export default function App() {
                     </div>
                 )}
                 {inVoiceRoom && screen !== 'voice-channel' && !inCall && (
-                    <div className='absolute inset-x-0 top-0 z-[15] flex items-center gap-2 bg-emerald-600 px-4 py-2 text-sm text-white'>
+                    <div className='absolute inset-x-0 top-0 z-[15] flex items-center gap-2 bg-emerald-600 px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-sm text-white'>
                         <Headphones className='size-4' />
                         <button
                             className='flex-1 cursor-pointer text-left font-medium'

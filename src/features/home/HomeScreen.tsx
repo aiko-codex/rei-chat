@@ -114,7 +114,7 @@ export function HomeScreen({ onOpenChannel, onOpenSettings }: HomeScreenProps) {
 
   return (
     <div className="flex h-full flex-col" data-testid="home-screen">
-      <header className="flex items-center justify-between px-5 pt-4 pb-2">
+      <header className="flex items-center justify-between px-5 pb-2 pt-[max(1rem,env(safe-area-inset-top))]">
         <h1 className="text-2xl font-bold">Chats</h1>
         <div className="flex items-center gap-1">
           <Button

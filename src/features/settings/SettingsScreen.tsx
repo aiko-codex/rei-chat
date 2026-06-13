@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   Bell,
@@ -19,7 +19,7 @@ import { useChatStore } from '@/store/chat-store';
 import { clearPairing } from '@/lib/pairing';
 import { UI_SCALES, getUIScale, setUIScale } from '@/lib/ui-scale';
 import { cn } from '@/lib/utils';
-import { clearServerCiphertext } from '@/lib/message-api';
+import { clearServerCiphertext, fetchVersions, type DeviceVersion } from '@/lib/message-api';
 import { ChangePINDialog } from './ChangePINDialog';
 import { EditProfileDialog } from './EditProfileDialog';
 import { PairDeviceDialog } from './PairDeviceDialog';
@@ -107,6 +107,51 @@ function TextSizeControl() {
   );
 }
 
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+function DeviceVersions() {
+  const [devices, setDevices] = useState<DeviceVersion[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void fetchVersions().then((d) => {
+      if (active) setDevices(d);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (devices.length === 0) return null;
+
+  return (
+    <div data-testid="settings-device-versions">
+      <SectionLabel>Updates</SectionLabel>
+      <ul className="space-y-1 px-4">
+        {devices.map((d) => (
+          <li key={d.deviceId} className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">
+              {d.mine ? 'This device' : 'Her device'}
+            </span>
+            <span className="text-muted-foreground/80">
+              v{d.version} · {relativeTime(d.updatedAt)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 interface SettingsScreenProps {
   onBack: () => void;
 }
@@ -157,7 +202,7 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
 
   return (
     <div className="flex h-full flex-col" data-testid="settings-screen">
-      <header className="flex items-center gap-2 border-b px-2 py-2.5">
+      <header className="flex items-center gap-2 border-b px-2 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
         <Button
           variant="ghost"
           size="icon"
@@ -258,12 +303,14 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
           )}
         </AnimatePresence>
 
+        <DeviceVersions />
+
         <button
           onClick={() => setVersionTaps((t) => t + 1)}
           className="mt-6 w-full cursor-default px-4 text-center text-xs text-muted-foreground/60"
           data-testid="settings-version-label"
         >
-          rei-chat 0.1.0{manageVisible && ' · manage unlocked'}
+          rei-chat {__APP_VERSION__}{manageVisible && ' · manage unlocked'}
         </button>
       </div>
 

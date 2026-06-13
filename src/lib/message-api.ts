@@ -122,6 +122,50 @@ export async function downloadMedia(id: string, mimeType: string): Promise<Blob 
   }
 }
 
+export interface DeviceVersion {
+  deviceId: string;
+  mine: boolean;
+  version: string;
+  build: string;
+  updatedAt: number;
+}
+
+/** record this device's running build in the server DB (best effort). */
+export async function reportVersion(): Promise<void> {
+  if (!SIGNAL_URL) return;
+  try {
+    await fetch(`${SIGNAL_URL}?action=version`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: getRoomId(),
+        deviceId: getDeviceId(),
+        version: __APP_VERSION__,
+        build: __BUILD_ID__,
+      }),
+    });
+  } catch {
+    // best effort — version tracking is non-critical
+  }
+}
+
+/** read both devices' last-reported versions for this room. */
+export async function fetchVersions(): Promise<DeviceVersion[]> {
+  if (!SIGNAL_URL) return [];
+  try {
+    const res = await fetch(
+      `${SIGNAL_URL}?action=versions&room=${encodeURIComponent(getRoomId())}`,
+    );
+    if (!res.ok) return [];
+    const data: { devices: Array<{ deviceId: string; version: string; build: string; updatedAt: number }> } =
+      await res.json();
+    const me = getDeviceId();
+    return data.devices.map((d) => ({ ...d, mine: d.deviceId === me }));
+  } catch {
+    return [];
+  }
+}
+
 export async function removeRemoteMessage(id: string): Promise<void> {
   try {
     await fetch(`${SIGNAL_URL}?action=remove`, {

@@ -109,7 +109,7 @@ export function VoiceChannelScreen({ onBack }: VoiceChannelScreenProps) {
   return (
     <div className="flex h-full flex-col" data-testid="voice-channel-screen">
       <audio ref={audioRef} autoPlay className="hidden" />
-      <header className="flex items-center gap-2 border-b px-2 py-2.5">
+      <header className="flex items-center gap-2 border-b px-2 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
         <Button variant="ghost" size="icon" className="cursor-pointer" onClick={onBack} aria-label="Back" data-testid="voice-back-btn">
           <ArrowLeft />
         </Button>

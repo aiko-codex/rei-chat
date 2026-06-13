@@ -34,7 +34,7 @@ export function ChatHeader({
 }: ChatHeaderProps) {
   return (
     <header
-      className="flex items-center gap-2 border-b bg-background/95 px-2 py-2.5 backdrop-blur supports-backdrop-filter:bg-background/80"
+      className="flex items-center gap-2 border-b bg-background/95 px-2 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur supports-backdrop-filter:bg-background/80"
       data-testid="chat-header"
     >
       <Button
