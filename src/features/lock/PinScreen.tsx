@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import { motion, useAnimationControls } from 'motion/react';
 import { Delete, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { verifyPIN } from '@/lib/pin';
 
 const PIN_LENGTH = 4;
-// UI-only phase: mock PIN. Real flow will verify against the locally stored key.
-const MOCK_PIN = '1234';
 
 interface PinScreenProps {
   onUnlock: () => void;
@@ -20,7 +19,7 @@ export function PinScreen({ onUnlock }: PinScreenProps) {
 
   useEffect(() => {
     if (pin.length < PIN_LENGTH) return;
-    if (pin === MOCK_PIN) {
+    if (verifyPIN(pin)) {
       const t = setTimeout(onUnlock, 150);
       return () => clearTimeout(t);
     }

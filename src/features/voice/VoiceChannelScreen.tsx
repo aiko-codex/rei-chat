@@ -1,44 +1,72 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { ArrowLeft, Headphones, HeadphoneOff, Mic, MicOff, PhoneOff } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { users } from '@/lib/mock-data';
-import type { User } from '@/lib/types';
+import { useVoiceRoomStore } from '@/store/voice-room-store';
+import { useChatStore } from '@/store/chat-store';
+
+/** light-weight mic-level meter → drives the green "speaking" ring */
+function useSpeaking(stream: MediaStream | null, active: boolean): boolean {
+  const [speaking, setSpeaking] = useState(false);
+  useEffect(() => {
+    if (!stream || !active || stream.getAudioTracks().length === 0) {
+      setSpeaking(false);
+      return;
+    }
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    let raf = 0;
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      setSpeaking(avg > 12);
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => {
+      cancelAnimationFrame(raf);
+      void ctx.close();
+    };
+  }, [stream, active]);
+  return speaking;
+}
 
 interface ParticipantTileProps {
-  user: User;
+  name: string;
+  color?: string;
   inChannel: boolean;
   speaking: boolean;
   muted: boolean;
 }
 
-function ParticipantTile({ user, inChannel, speaking, muted }: ParticipantTileProps) {
+function ParticipantTile({ name, color, inChannel, speaking, muted }: ParticipantTileProps) {
   return (
     <div
       className={cn(
         'flex flex-col items-center gap-2 rounded-2xl border bg-card px-6 py-5 transition-opacity',
         !inChannel && 'opacity-40',
       )}
-      data-testid={`voice-participant-${user.id}`}
+      data-testid="voice-participant"
     >
-      <div
-        className={cn(
-          'rounded-full p-[3px] transition-colors',
-          speaking ? 'bg-emerald-500' : 'bg-transparent',
-        )}
-      >
+      <div className={cn('rounded-full p-[3px] transition-colors', speaking ? 'bg-emerald-500' : 'bg-transparent')}>
         <Avatar className="size-16">
-          <AvatarFallback className="text-xl">{user.name[0]}</AvatarFallback>
+          <AvatarFallback className="text-xl" style={color ? { backgroundColor: color } : undefined}>
+            {name[0]}
+          </AvatarFallback>
         </Avatar>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="text-sm font-medium">{user.name}</span>
+        <span className="text-sm font-medium">{name}</span>
         {inChannel && muted && <MicOff className="size-3.5 text-muted-foreground" />}
       </div>
       <span className="text-xs text-muted-foreground">
-        {inChannel ? (speaking ? 'speaking' : 'in channel') : 'not connected'}
+        {inChannel ? (speaking ? 'speaking' : 'in the room') : 'not here'}
       </span>
     </div>
   );
@@ -49,29 +77,38 @@ interface VoiceChannelScreenProps {
 }
 
 export function VoiceChannelScreen({ onBack }: VoiceChannelScreenProps) {
-  const [joined, setJoined] = useState(false);
-  const [muted, setMuted] = useState(false);
+  const joined = useVoiceRoomStore((s) => s.joined);
+  const peerJoined = useVoiceRoomStore((s) => s.peerJoined);
+  const muted = useVoiceRoomStore((s) => s.muted);
+  const localStream = useVoiceRoomStore((s) => s.localStream);
+  const remoteStream = useVoiceRoomStore((s) => s.remoteStream);
+  const join = useVoiceRoomStore((s) => s.join);
+  const leave = useVoiceRoomStore((s) => s.leave);
+  const toggleMute = useVoiceRoomStore((s) => s.toggleMute);
+
+  const myProfile = useChatStore((s) => s.myProfile);
+  const peerProfile = useChatStore((s) => s.peerProfile);
+
   const [deafened, setDeafened] = useState(false);
-  // UI-only phase: fake the peer talking now and then while joined
-  const [peerSpeaking, setPeerSpeaking] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
-    if (!joined) {
-      setPeerSpeaking(false);
-      return;
+    if (audioRef.current && remoteStream) {
+      audioRef.current.srcObject = remoteStream;
+      void audioRef.current.play().catch(() => {});
     }
-    const i = setInterval(() => setPeerSpeaking((s) => !s), 2500);
-    return () => clearInterval(i);
-  }, [joined]);
+  }, [remoteStream]);
 
-  const leave = () => {
-    setJoined(false);
-    setMuted(false);
-    setDeafened(false);
-  };
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.muted = deafened;
+  }, [deafened]);
+
+  const iSpeak = useSpeaking(localStream, joined && !muted);
+  const peerSpeaks = useSpeaking(remoteStream, peerJoined && !deafened);
 
   return (
     <div className="flex h-full flex-col" data-testid="voice-channel-screen">
+      <audio ref={audioRef} autoPlay className="hidden" />
       <header className="flex items-center gap-2 border-b px-2 py-2.5">
         <Button variant="ghost" size="icon" className="cursor-pointer" onClick={onBack} aria-label="Back" data-testid="voice-back-btn">
           <ArrowLeft />
@@ -80,19 +117,31 @@ export function VoiceChannelScreen({ onBack }: VoiceChannelScreenProps) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">Our room</p>
           <p className="text-xs text-muted-foreground">
-            {joined ? 'connected · always open' : 'always open'}
+            {joined ? (peerJoined ? 'connected · always open' : 'waiting for them · always open') : 'always open'}
           </p>
         </div>
       </header>
 
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6">
         <div className="grid w-full max-w-sm grid-cols-2 gap-3">
-          <ParticipantTile user={users.me} inChannel={joined} speaking={false} muted={muted} />
-          <ParticipantTile user={users.her} inChannel={joined} speaking={peerSpeaking} muted={false} />
+          <ParticipantTile
+            name={myProfile?.name ?? 'You'}
+            color={myProfile?.color}
+            inChannel={joined}
+            speaking={iSpeak}
+            muted={muted}
+          />
+          <ParticipantTile
+            name={peerProfile?.name ?? 'Her'}
+            color={peerProfile?.color}
+            inChannel={peerJoined}
+            speaking={peerSpeaks}
+            muted={false}
+          />
         </div>
         {!joined && (
           <p className="text-center text-xs text-muted-foreground">
-            A voice room that's always there — join whenever, like sitting in the same room.
+            A voice room that's always there — hop in whenever, like sitting in the same room.
           </p>
         )}
       </div>
@@ -104,7 +153,7 @@ export function VoiceChannelScreen({ onBack }: VoiceChannelScreenProps) {
               variant={muted ? 'default' : 'secondary'}
               size="icon-lg"
               className="cursor-pointer rounded-full"
-              onClick={() => setMuted((m) => !m)}
+              onClick={toggleMute}
               aria-label={muted ? 'Unmute' : 'Mute'}
               aria-pressed={muted}
               data-testid="voice-mute-btn"
@@ -137,7 +186,7 @@ export function VoiceChannelScreen({ onBack }: VoiceChannelScreenProps) {
             <Button
               className="w-full cursor-pointer rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
               size="lg"
-              onClick={() => setJoined(true)}
+              onClick={() => void join()}
               data-testid="voice-join-btn"
             >
               <Headphones /> Join voice
