@@ -131,7 +131,7 @@ function MediaContent({
         src={media.url}
         alt={media.name}
         onClick={onOpenImage}
-        className="max-h-80 w-full cursor-pointer rounded-2xl object-cover"
+        className="max-h-80 w-full cursor-pointer rounded-2xl object-cover ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15"
         data-testid="media-image"
       />
     );
@@ -142,7 +142,7 @@ function MediaContent({
     return (
       <div
         onClick={onOpenImage}
-        className="relative cursor-pointer overflow-hidden rounded-2xl"
+        className="relative cursor-pointer overflow-hidden rounded-2xl ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15"
         data-testid="media-video"
       >
         <video

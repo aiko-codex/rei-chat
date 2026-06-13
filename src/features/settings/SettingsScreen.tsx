@@ -8,6 +8,7 @@ import {
   Lock,
   QrCode,
   ShieldCheck,
+  Type,
   Unplug,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -16,6 +17,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/store/chat-store';
 import { clearPairing } from '@/lib/pairing';
+import { UI_SCALES, getUIScale, setUIScale } from '@/lib/ui-scale';
+import { cn } from '@/lib/utils';
 import { clearServerCiphertext } from '@/lib/message-api';
 import { ChangePINDialog } from './ChangePINDialog';
 import { EditProfileDialog } from './EditProfileDialog';
@@ -57,6 +60,50 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <p className="px-4 pt-5 pb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
       {children}
     </p>
+  );
+}
+
+function TextSizeControl() {
+  const [scale, setScale] = useState(() => getUIScale());
+
+  const pick = (value: number) => {
+    setScale(value);
+    setUIScale(value); // applies live to the whole UI
+  };
+
+  return (
+    <div className="px-4 py-3" data-testid="settings-text-size">
+      <div className="mb-2 flex items-center gap-3">
+        <Type className="size-4 text-muted-foreground" />
+        <span className="flex-1 text-sm font-medium">Text size</span>
+        <span className="text-xs text-muted-foreground">Aa</span>
+      </div>
+      <div className="flex items-stretch gap-1 rounded-xl bg-muted p-1">
+        {UI_SCALES.map((opt) => {
+          const active = Math.abs(scale - opt.value) < 0.001;
+          return (
+            <button
+              key={opt.id}
+              onClick={() => pick(opt.value)}
+              aria-pressed={active}
+              data-testid={`text-size-${opt.id}`}
+              className={cn(
+                'flex flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg py-2 transition-colors',
+                active ? 'bg-background shadow-sm' : 'hover:bg-background/50',
+              )}
+            >
+              <span
+                className={cn('font-semibold leading-none', active ? 'text-primary' : 'text-foreground')}
+                style={{ fontSize: `${8 + opt.value * 9}px` }}
+              >
+                A
+              </span>
+              <span className="text-[10px] text-muted-foreground">{opt.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -162,6 +209,9 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
           onClick={() => setPairDeviceOpen(true)}
           testId="settings-pair-device"
         />
+
+        <SectionLabel>Appearance</SectionLabel>
+        <TextSizeControl />
 
         <SectionLabel>General</SectionLabel>
         <Row
