@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   Bell,
+  Check,
   ChevronRight,
   Eraser,
   KeyRound,
@@ -25,6 +26,7 @@ import { clearPairing } from '@/lib/pairing';
 import { sendPeerProfile } from '@/lib/peer-service';
 import { UI_SCALES, getUIScale, setUIScale } from '@/lib/ui-scale';
 import { THEMES, getTheme, setTheme, type ThemeId } from '@/lib/theme';
+import { ACCENTS, getAccentId, setAccent } from '@/lib/accent';
 import { cn } from '@/lib/utils';
 import { clearServerCiphertext, fetchVersions, type DeviceVersion } from '@/lib/message-api';
 import { ChangePINDialog } from './ChangePINDialog';
@@ -159,6 +161,46 @@ function ThemeControl() {
           );
         })}
       </ToggleGroup>
+    </div>
+  );
+}
+
+function AccentControl() {
+  const [accent, setAccentState] = useState(() => getAccentId());
+
+  const pick = (id: string) => {
+    setAccentState(id);
+    setAccent(id); // applies live to the whole UI
+  };
+
+  return (
+    <div className="px-4 py-3" data-testid="settings-accent">
+      <div className="mb-2 flex items-center gap-3">
+        <Palette className="size-4 text-muted-foreground" />
+        <span className="flex-1 text-sm font-medium">Accent color</span>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        {ACCENTS.map((opt) => {
+          const active = accent === opt.id;
+          return (
+            <button
+              key={opt.id}
+              onClick={() => pick(opt.id)}
+              aria-label={opt.label}
+              aria-pressed={active}
+              title={opt.label}
+              data-testid={`accent-${opt.id}`}
+              className={cn(
+                'flex size-9 cursor-pointer items-center justify-center rounded-full text-white ring-offset-2 ring-offset-background transition-transform hover:scale-105 [&_svg]:size-4.5',
+                active && 'ring-2 ring-foreground/30',
+              )}
+              style={{ backgroundColor: opt.primary }}
+            >
+              {active && <Check />}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -455,6 +497,7 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
             </header>
             <div className="flex-1 overflow-y-auto pt-2 pb-6">
               <ThemeControl />
+              <AccentControl />
               <TextSizeControl />
             </div>
           </motion.div>

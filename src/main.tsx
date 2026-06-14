@@ -4,11 +4,13 @@ import './index.css';
 import App from './App';
 import { applyUIScale } from './lib/ui-scale';
 import { applyTheme, watchSystemTheme } from './lib/theme';
+import { applyAccent } from './lib/accent';
 
-// restore the saved text-size scale + theme before first paint (no flash)
+// restore the saved text-size scale + theme + accent before first paint (no flash)
 applyUIScale();
 applyTheme();
 watchSystemTheme();
+applyAccent();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

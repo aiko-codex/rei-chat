@@ -256,6 +256,7 @@ export function MessageBubble({
     longPressFired.current = false;
     pressTimer.current = setTimeout(() => {
       longPressFired.current = true;
+      navigator.vibrate?.(10); // subtle haptic when the menu pops (native feel)
       onLongPress(message);
     }, LONG_PRESS_MS);
   };
@@ -287,7 +288,7 @@ export function MessageBubble({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18, ease: 'easeOut' }}
       className={cn(
-        'flex w-full',
+        'flex w-full select-none [-webkit-touch-callout:none]',
         isMine ? 'justify-end' : 'justify-start',
         message.status === 'failed' && 'flex-col items-end gap-1',
         reactions.length > 0 && 'mb-3',
@@ -313,7 +314,7 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          'relative max-w-[78%] select-none wrap-break-word text-sm leading-relaxed',
+          'relative max-w-[78%] select-none [-webkit-touch-callout:none] wrap-break-word text-sm leading-relaxed',
           plainMedia
             ? 'rounded-2xl'
             : [
