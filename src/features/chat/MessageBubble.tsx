@@ -217,6 +217,8 @@ interface MessageBubbleProps {
   isMine: boolean;
   /** last message of a consecutive group from the same sender */
   isGroupEnd: boolean;
+  /** most-recent outgoing message — gets the iMessage-style status word */
+  isLastOwn?: boolean;
   /** resolved original message when this is a reply */
   replyTo?: Message;
   /** sender name for the quote header */
@@ -236,6 +238,7 @@ export function MessageBubble({
   message,
   isMine,
   isGroupEnd,
+  isLastOwn,
   replyTo,
   highlighted,
   onLongPress,
@@ -297,6 +300,16 @@ export function MessageBubble({
   ) : (
     <Check className="size-3" />
   );
+
+  // iMessage-style status word under the most-recent outgoing message
+  const statusWord =
+    isMine && isLastOwn && message.status !== 'failed'
+      ? message.status === 'read'
+        ? 'Seen'
+        : message.status === 'delivered'
+          ? 'Delivered'
+          : 'Sent'
+      : null;
 
   return (
     <motion.div
@@ -445,6 +458,17 @@ export function MessageBubble({
           >
             Not delivered — tap to retry
           </button>
+        )}
+        {statusWord && (
+          <span
+            className={cn(
+              'mt-0.5 px-0.5 text-[11px] leading-none',
+              message.status === 'read' ? 'text-sky-400' : 'text-muted-foreground',
+            )}
+            data-testid={`status-word-${message.id}`}
+          >
+            {statusWord}
+          </span>
         )}
       </div>
     </motion.div>

@@ -73,7 +73,7 @@ export function ChangePINDialog({ open, onOpenChange }: ChangePINDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-sm">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Change PIN</DialogTitle>
         </DialogHeader>

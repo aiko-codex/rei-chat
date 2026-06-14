@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Hash, Heart, LockKeyhole } from 'lucide-react';
 import { toast } from 'sonner';
 import { ChatHeader } from './ChatHeader';
@@ -9,10 +9,15 @@ import { Lightbox } from './Lightbox';
 import { TodoChannelScreen } from '@/features/todo/TodoChannelScreen';
 import { SIGNAL_URL } from '@/lib/config';
 import { putBlob } from '@/lib/db';
-import { removeRemoteMessage, uploadMedia, uploadMessage } from '@/lib/message-api';
+import {
+    removeRemoteMessage,
+    uploadMedia,
+    uploadMessage,
+} from '@/lib/message-api';
 import {
     sendPeerMedia,
     sendPeerMessage,
+    sendPeerRead,
     sendPeerRemove,
     sendPeerTyping,
 } from '@/lib/peer-service';
@@ -58,10 +63,27 @@ export function ChatScreen({
     );
     const channel = channels.find((c) => c.id === channelId);
 
-    // clear the unread badge while this channel is open
+    // clear the unread badge when the channel opens
     useEffect(() => {
         markSeen(channelId);
-    }, [channelId, allMessages.length, markSeen]);
+    }, [channelId, markSeen]);
+
+    // Mark "read" only when the user is genuinely viewing the latest message
+    // (channel open + scrolled to the bottom), not merely because a new message
+    // arrived while they're scrolled up reading history. When connected, also
+    // push the receipt over P2P so "Seen" flips instantly instead of waiting
+    // for the next server poll; the server upload (markSeen→markRead) is the
+    // offline fallback.
+    const lastReadSent = useRef(0);
+    const onViewedBottom = useCallback(() => {
+        markSeen(channelId);
+        if (!isDm) return;
+        const newest = messages.reduce((max, m) => (m.sentAt > max ? m.sentAt : max), 0);
+        if (newest > lastReadSent.current) {
+            lastReadSent.current = newest;
+            sendPeerRead(newest);
+        }
+    }, [channelId, isDm, messages, markSeen]);
 
     const imageMessages = messages.filter((m) => m.media?.kind === 'image');
 
@@ -126,11 +148,15 @@ export function ChatScreen({
                 // back up to the server so it restores on a new device: the
                 // metadata row (object URL stripped) + the encrypted bytes,
                 // surfacing upload progress on the bubble as it streams up
-                void storeOnServer({ ...message, media: { ...message.media!, url: '' } });
+                void storeOnServer({
+                    ...message,
+                    media: { ...message.media!, url: '' },
+                });
                 const store = useChatStore.getState();
                 store.setTransfer(message.id, 0.01);
-                void uploadMedia(message.id, blob, (p) => store.setTransfer(message.id, p))
-                    .finally(() => store.clearTransfer(message.id));
+                void uploadMedia(message.id, blob, (p) =>
+                    store.setTransfer(message.id, p),
+                ).finally(() => store.clearTransfer(message.id));
             }
         }
         setReplyTarget(null);
@@ -151,7 +177,11 @@ export function ChatScreen({
     const toggleDefaultReaction = (message: Message) => {
         const def = useChatStore.getState().quickReactions[0];
         const current = message.reactions?.[currentUserId];
-        setReaction(message.id, currentUserId, current === def ? undefined : def);
+        setReaction(
+            message.id,
+            currentUserId,
+            current === def ? undefined : def,
+        );
     };
 
     // E2E means the server can never restore deleted content — both removal
@@ -268,6 +298,7 @@ export function ChatScreen({
                 />
             )}
             <MessageList
+                key={channelId}
                 messages={messages}
                 currentUserId={currentUserId}
                 peerTyping={isDm && peerTyping}
@@ -275,6 +306,7 @@ export function ChatScreen({
                 onOpenImage={setLightboxTarget}
                 onRetry={retry}
                 onDoubleTapReact={isDm ? toggleDefaultReaction : undefined}
+                onViewedBottom={onViewedBottom}
                 emptyState={
                     isDm ? (
                         <div className='flex max-w-xs flex-col items-center gap-3 text-center'>
@@ -318,7 +350,11 @@ export function ChatScreen({
                     replyTarget ? displayName(replyTarget.senderId) : undefined
                 }
                 onCancelReply={() => setReplyTarget(null)}
-                editing={editTarget ? { id: editTarget.id, text: editTarget.text ?? '' } : null}
+                editing={
+                    editTarget
+                        ? { id: editTarget.id, text: editTarget.text ?? '' }
+                        : null
+                }
                 onEditSubmit={submitEdit}
                 onCancelEdit={() => setEditTarget(null)}
             />

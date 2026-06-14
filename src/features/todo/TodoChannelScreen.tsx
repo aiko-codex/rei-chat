@@ -666,7 +666,7 @@ export function TodoChannelScreen({ channel, onBack }: TodoChannelScreenProps) {
 
       {/* time-spent prompt on check-off */}
       <Dialog open={completeTarget !== null} onOpenChange={(open) => !open && setCompleteTarget(null)}>
-        <DialogContent className="max-w-sm" data-testid="time-spent-dialog">
+        <DialogContent data-testid="time-spent-dialog">
           <DialogHeader>
             <DialogTitle>How long did it take?</DialogTitle>
           </DialogHeader>

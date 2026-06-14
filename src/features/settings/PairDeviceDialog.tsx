@@ -47,7 +47,7 @@ export function PairDeviceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xs sm:max-w-sm">
+      <DialogContent>
         <DialogHeader className="text-center">
           <DialogTitle>Pair a device</DialogTitle>
           <p className="text-xs text-muted-foreground mt-2">

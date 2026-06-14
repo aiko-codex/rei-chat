@@ -222,7 +222,7 @@ export function VoiceRecorderModal({ open, onClose, onSend }: VoiceRecorderModal
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-sm" data-testid="voice-recorder-modal">
+      <DialogContent data-testid="voice-recorder-modal">
         <DialogHeader>
           <DialogTitle>
             {phase === 'preview' ? 'Preview voice note' : 'Recording voice note'}

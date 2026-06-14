@@ -12,7 +12,10 @@ body,
 }
 
 body {
+  /* crisp, high-quality text rendering across platforms */
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   /* native-app feel: no rubber-band scroll, no text-selection callouts on chrome UI */
   overscroll-behavior: none;
 }

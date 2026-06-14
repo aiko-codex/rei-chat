@@ -46,7 +46,7 @@ export function ManageDevicesDialog({ open, onOpenChange }: ManageDevicesDialogP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm" data-testid="manage-devices-dialog">
+      <DialogContent data-testid="manage-devices-dialog">
         <DialogHeader>
           <DialogTitle>Manage devices</DialogTitle>
         </DialogHeader>

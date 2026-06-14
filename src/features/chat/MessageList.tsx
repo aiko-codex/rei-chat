@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
@@ -7,6 +7,11 @@ import type { Message, UserId } from '@/lib/types';
 
 /** how close to the bottom (px) still counts as "reading the latest" */
 const NEAR_BOTTOM_PX = 120;
+
+/** render only the most recent N messages; reveal another page on scroll-up */
+const PAGE_SIZE = 30;
+/** start loading older messages when the user scrolls within this of the top */
+const LOAD_MORE_PX = 300;
 
 /** Instagram-style typing bubble: three dots pulsing in sequence */
 function TypingBubble() {
@@ -52,6 +57,8 @@ interface MessageListProps {
   onRetry?: (message: Message) => void;
   /** double-tap a message to toggle the default reaction */
   onDoubleTapReact?: (message: Message) => void;
+  /** fired when the user is genuinely viewing the latest message (at the bottom) */
+  onViewedBottom?: () => void;
   /** shown centered when the channel has no messages yet */
   emptyState?: React.ReactNode;
 }
@@ -64,6 +71,7 @@ export function MessageList({
   onOpenImage,
   onRetry,
   onDoubleTapReact,
+  onViewedBottom,
   emptyState,
 }: MessageListProps) {
   const displayName = useChatStore((s) => s.displayName);
@@ -72,6 +80,37 @@ export function MessageList({
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [unseenBelow, setUnseenBelow] = useState(0);
+
+  // windowed rendering: only mount the most recent `visibleCount` messages so a
+  // 3000-message history doesn't create 3000 DOM nodes. Scrolling near the top
+  // reveals another page; the messages themselves are already in memory.
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  // distance-from-bottom captured before prepending older rows, so we can pin
+  // the viewport in place once the taller content lays out (no scroll jump)
+  const restoreFromBottom = useRef<number | null>(null);
+
+  const loadOlder = () => {
+    const el = containerRef.current;
+    if (!el || restoreFromBottom.current !== null) return;
+    if (visibleCount >= messages.length) return;
+    restoreFromBottom.current = el.scrollHeight - el.scrollTop;
+    setVisibleCount((c) => Math.min(messages.length, c + PAGE_SIZE));
+  };
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (el && restoreFromBottom.current !== null) {
+      el.scrollTop = el.scrollHeight - restoreFromBottom.current;
+      restoreFromBottom.current = null;
+    }
+  }, [visibleCount]);
+
+  // keep the latest callback without retriggering the scroll effects
+  const viewedBottomRef = useRef(onViewedBottom);
+  viewedBottomRef.current = onViewedBottom;
+  const notifyViewedBottom = () => {
+    if (document.visibilityState === 'visible') viewedBottomRef.current?.();
+  };
 
   const isNearBottom = () => {
     const el = containerRef.current;
@@ -84,11 +123,29 @@ export function MessageList({
     setUnseenBelow(0);
   };
 
-  // opening the channel always starts at the latest message, instantly
+  const rafs = useRef<number[]>([]);
+  // opening the channel always starts pinned to the absolute latest message.
+  // useLayoutEffect runs before paint, and we re-pin on the next frames to
+  // catch late layout shifts (status line, reactions, avatars, media) that
+  // would otherwise leave us a few messages short of the bottom.
   const mounted = useRef(false);
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    const pin = () => {
+      if (el) el.scrollTop = el.scrollHeight;
+    };
+    pin();
+    const r1 = requestAnimationFrame(() => {
+      pin();
+      const r2 = requestAnimationFrame(pin);
+      rafs.current.push(r2);
+    });
+    rafs.current.push(r1);
     mounted.current = true;
+    // opening the channel lands us on the latest message → we've seen it
+    notifyViewedBottom();
+    return () => rafs.current.forEach(cancelAnimationFrame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // after mount, auto-scroll only when it doesn't steal the reading
@@ -99,6 +156,8 @@ export function MessageList({
     if (!lastMessage || !mounted.current) return;
     if (lastMessage.senderId === currentUserId || isNearBottom()) {
       scrollToBottom();
+      // a new message arrived while we're at the bottom → we've seen it
+      if (lastMessage.senderId !== currentUserId) notifyViewedBottom();
     } else {
       setUnseenBelow((n) => n + 1);
     }
@@ -110,19 +169,49 @@ export function MessageList({
   }, [peerTyping]);
 
   const jumpTo = (id: string) => {
-    rowRefs.current.get(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // the quoted message may be older than the current window — reveal enough
+    // pages to include it before scrolling
+    const idx = byIndex.get(id);
+    if (idx !== undefined && idx < messages.length - visibleCount) {
+      setVisibleCount(messages.length - idx + PAGE_SIZE);
+    }
     setHighlightId(id);
+    // wait a tick for the newly-revealed rows to mount, then scroll
+    requestAnimationFrame(() => {
+      rowRefs.current.get(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
     setTimeout(() => setHighlightId(null), 1200);
   };
 
   const byId = new Map(messages.map((m) => [m.id, m]));
+  const byIndex = new Map(messages.map((m, i) => [m.id, i]));
+
+  // only render the tail window; older rows mount as the user scrolls up
+  const startIndex = Math.max(0, messages.length - visibleCount);
+  const windowed = messages.slice(startIndex);
+
+  // iMessage-style status word ("Sent"/"Delivered"/"Seen") shows under the
+  // most-recent outgoing message only, not on every bubble.
+  let lastOwnId: string | undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].senderId === currentUserId) {
+      lastOwnId = messages[i].id;
+      break;
+    }
+  }
 
   return (
     <div className="relative min-h-0 flex-1">
       <div
         ref={containerRef}
         onScroll={() => {
-          if (unseenBelow > 0 && isNearBottom()) setUnseenBelow(0);
+          const el = containerRef.current;
+          if (el && el.scrollTop < LOAD_MORE_PX) loadOlder();
+          if (isNearBottom()) {
+            if (unseenBelow > 0) setUnseenBelow(0);
+            // scrolled down to the latest → mark as seen
+            notifyViewedBottom();
+          }
         }}
         className="h-full overflow-y-auto px-4 py-3"
         data-testid="message-list"
@@ -133,7 +222,15 @@ export function MessageList({
         </div>
       )}
       <div className="flex flex-col gap-1">
-        {messages.map((msg, i) => {
+        {startIndex > 0 && (
+          <div className="flex justify-center py-2 text-xs text-muted-foreground" data-testid="loading-older">
+            Loading earlier messages…
+          </div>
+        )}
+        {windowed.map((msg) => {
+          // grouping/day-labels resolve against the full array, not the window,
+          // so the boundary row keeps the correct header + tail spacing
+          const i = byIndex.get(msg.id)!;
           const prev = messages[i - 1];
           const next = messages[i + 1];
           const newDay = !prev || dayLabel(prev.sentAt) !== dayLabel(msg.sentAt);
@@ -158,6 +255,7 @@ export function MessageList({
               <MessageBubble
                 message={msg}
                 isMine={msg.senderId === currentUserId}
+                isLastOwn={msg.id === lastOwnId}
                 isGroupEnd={isGroupEnd}
                 replyTo={replyTo}
                 replyToName={replyTo ? displayName(replyTo.senderId) : undefined}

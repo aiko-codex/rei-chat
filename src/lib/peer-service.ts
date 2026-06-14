@@ -34,6 +34,7 @@ type ChatFrame =
   | { kind: 'ack'; id: string }
   | { kind: 'typing'; typing: boolean }
   | { kind: 'remove'; id: string }
+  | { kind: 'read'; at: number }
   | { kind: 'profile'; profile: Profile }
   // announces a media transfer; the bytes follow over the binary media channel
   | { kind: 'media-meta'; message: Message }
@@ -47,6 +48,7 @@ function asChatFrame(data: unknown): ChatFrame | null {
   if (f.kind === 'ack' && typeof f.id === 'string') return f;
   if (f.kind === 'typing' && typeof f.typing === 'boolean') return f;
   if (f.kind === 'remove' && typeof f.id === 'string') return f;
+  if (f.kind === 'read' && typeof f.at === 'number') return f;
   if (f.kind === 'profile' && typeof f.profile === 'object') return f;
   if (f.kind === 'media-meta' && typeof f.message === 'object') return f;
   if (f.kind === 'call-offer' && (f.callType === 'voice' || f.callType === 'video')) return f;
@@ -151,6 +153,15 @@ export function startPeerService(): void {
         case 'remove': {
           // peer unsent a message — drop our local copy too
           store.remove(frame.id);
+          break;
+        }
+        case 'read': {
+          // peer is genuinely viewing the DM (in chat, scrolled to bottom) —
+          // flip our sent receipts instantly instead of waiting for the poll.
+          // Only ever move the high-water-mark forward (frames can arrive late).
+          if (frame.at > useChatStore.getState().peerReadAt) {
+            store.applyPeerReadAt(frame.at);
+          }
           break;
         }
         case 'profile': {
@@ -305,6 +316,11 @@ export function stopCallTracks(): void {
 /** tell the peer to drop their local copy (unsend); best effort if offline */
 export function sendPeerRemove(id: string): void {
   peer?.sendChat({ kind: 'remove', id } satisfies ChatFrame);
+}
+
+/** instant read receipt over P2P (high-water-mark epoch ms); server upload is the offline fallback */
+export function sendPeerRead(at: number): boolean {
+  return peer?.sendChat({ kind: 'read', at } satisfies ChatFrame) ?? false;
 }
 
 /** push my profile to the peer (call after editing it) */

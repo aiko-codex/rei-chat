@@ -357,7 +357,7 @@ export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications 
       </Drawer>
 
       <Dialog open={createKind !== null} onOpenChange={(open) => !open && setCreateKind(null)}>
-        <DialogContent className="max-w-sm" data-testid="create-channel-dialog">
+        <DialogContent data-testid="create-channel-dialog">
           <DialogHeader>
             <DialogTitle>
               {createKind === 'todo' ? 'New to-do list' : 'New text channel'}
@@ -440,7 +440,7 @@ export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications 
       </Drawer>
 
       <Dialog open={editChannelId !== null} onOpenChange={(open) => !open && setEditChannelId(null)}>
-        <DialogContent className="max-w-sm" data-testid="rename-channel-dialog">
+        <DialogContent data-testid="rename-channel-dialog">
           <DialogHeader>
             <DialogTitle>Edit channel name</DialogTitle>
           </DialogHeader>
