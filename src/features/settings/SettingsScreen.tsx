@@ -219,6 +219,7 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
   const [versionTaps, setVersionTaps] = useState(0);
   const manageVisible = versionTaps >= 5;
 
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [changePinOpen, setChangePinOpen] = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [pairDeviceOpen, setPairDeviceOpen] = useState(false);
@@ -314,8 +315,13 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
         />
 
         <SectionLabel>Appearance</SectionLabel>
-        <ThemeControl />
-        <TextSizeControl />
+        <Row
+          icon={<Palette className="size-4" />}
+          label="Appearance"
+          hint="Theme & text size"
+          onClick={() => setAppearanceOpen(true)}
+          testId="settings-appearance"
+        />
 
         <SectionLabel>General</SectionLabel>
         <Row
@@ -421,6 +427,39 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
         confirmText="Revoke"
         onConfirm={handleRevokePush}
       />
+
+      {/* Appearance sub-page — slides over Settings to keep the main list lean */}
+      <AnimatePresence>
+        {appearanceOpen && (
+          <motion.div
+            key="appearance"
+            className="absolute inset-0 z-10 flex flex-col bg-background"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+            data-testid="settings-appearance-page"
+          >
+            <header className="flex items-center gap-2 border-b px-2 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="cursor-pointer"
+                onClick={() => setAppearanceOpen(false)}
+                aria-label="Back"
+                data-testid="settings-appearance-back"
+              >
+                <ArrowLeft />
+              </Button>
+              <p className="text-sm font-semibold">Appearance</p>
+            </header>
+            <div className="flex-1 overflow-y-auto pt-2 pb-6">
+              <ThemeControl />
+              <TextSizeControl />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
