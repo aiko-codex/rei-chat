@@ -7,6 +7,7 @@ import { PinScreen } from '@/features/lock/PinScreen';
 import { PairingScreen } from '@/features/pairing/PairingScreen';
 import { ProfileSetupScreen } from '@/features/profile/ProfileSetupScreen';
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
+import { NotificationsScreen } from '@/features/notifications/NotificationsScreen';
 import { Toaster } from '@/components/ui/sonner';
 import { VoiceChannelScreen } from '@/features/voice/VoiceChannelScreen';
 import {
@@ -77,7 +78,13 @@ export default function App() {
         if (!unlocked || !paired || !SIGNAL_URL) return;
         const tick = () => {
             if (document.visibilityState === 'visible') {
-                void useChatStore.getState().syncHistory();
+                const s = useChatStore.getState();
+                void s.syncHistory();
+                void s.syncProfiles();
+                void s.syncMeta();
+                void s.syncLocal();
+                void s.syncInvites();
+                void s.syncAccepted();
             }
         };
         const delay = peerStatus === 'connected' ? 15_000 : 3_000;
@@ -195,6 +202,7 @@ export default function App() {
                         <HomeScreen
                             onOpenChannel={openChannel}
                             onOpenSettings={() => setScreen('settings')}
+                            onOpenNotifications={() => setScreen('notifications')}
                         />
                     )}
 
@@ -243,6 +251,14 @@ export default function App() {
                 {screen === 'settings' && (
                     <div className='absolute inset-0 z-10 bg-background'>
                         <SettingsScreen onBack={() => setScreen('home')} />
+                    </div>
+                )}
+                {screen === 'notifications' && (
+                    <div className='absolute inset-0 z-10 bg-background'>
+                        <NotificationsScreen
+                            onBack={() => setScreen('home')}
+                            onOpenChannel={openChannel}
+                        />
                     </div>
                 )}
                 {inVoiceRoom && screen !== 'voice-channel' && !inCall && (

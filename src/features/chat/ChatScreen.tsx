@@ -205,6 +205,7 @@ export function ChatScreen({
                 <ChatHeader
                     title={peerProfile?.name ?? 'Her'}
                     avatarColor={peerProfile?.color}
+                    avatarUrl={peerProfile?.avatar}
                     online={!SIGNAL_URL || peerStatus === 'connected'}
                     subtitle={
                         SIGNAL_URL
@@ -225,7 +226,11 @@ export function ChatScreen({
             ) : (
                 <ChatHeader
                     title={channel?.name ?? 'channel'}
-                    subtitle='personal · only on this device'
+                    subtitle={
+                        channel?.shared
+                            ? `synced with ${peerProfile?.name ?? 'her'}`
+                            : 'personal · only on this device'
+                    }
                     isChannel
                     onBack={onBack}
                 />

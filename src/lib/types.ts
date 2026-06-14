@@ -26,8 +26,11 @@ export interface MediaAttachment {
  *  over the encrypted data channel — never stored on the server */
 export interface Profile {
   name: string;
-  /** avatar background color (hex) */
+  /** avatar background color (hex) — fallback behind the initial */
   color: string;
+  /** optional avatar image as a compressed jpeg data URL. Encrypted at rest on
+   *  the server like everything else; falls back to color + initial if absent. */
+  avatar?: string;
 }
 
 /** the one DM channel between the two devices */
@@ -35,11 +38,33 @@ export const DM_CHANNEL_ID = 'dm';
 
 export interface Channel {
   id: string;
-  /** 'dm' syncs P2P + encrypted server store; 'personal' and 'todo' never
-   *  leave this device */
+  /** 'dm' syncs P2P + encrypted server store; 'personal' and 'todo' start
+   *  device-local and only sync once shared via an accepted collab invite */
   kind: 'dm' | 'personal' | 'todo';
   name: string;
   createdAt: number;
+  /** true once this channel is collaborative (invited + accepted) — only then
+   *  is it backed up room-keyed and synced between the two devices */
+  shared?: boolean;
+}
+
+/** a pending collaboration invite for a personal/todo channel, surfaced as a
+ *  home-screen notification on the invitee's device */
+export interface CollabInvite {
+  channelId: string;
+  name: string;
+  kind: 'personal' | 'todo';
+  /** inviter's display name, for the notification copy */
+  fromName: string;
+  createdAt: number;
+}
+
+/** notice on the *inviter's* notifications page that the peer accepted a
+ *  collab invite (informational — just dismiss / open the channel) */
+export interface AcceptedNotice {
+  channelId: string;
+  name: string;
+  kind: 'personal' | 'todo';
 }
 
 export interface Message {
@@ -77,4 +102,5 @@ export type Screen =
   | 'chat'
   | 'call'
   | 'voice-channel'
-  | 'settings';
+  | 'settings'
+  | 'notifications';

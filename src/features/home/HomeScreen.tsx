@@ -1,6 +1,17 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Hash, ListTodo, Plus, Settings, Trash2 } from 'lucide-react';
+import {
+  Bell,
+  Hash,
+  ListTodo,
+  MoreVertical,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Settings,
+  Trash2,
+  UserPlus,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Drawer,
@@ -8,7 +19,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
-import { Avatar, AvatarBadge, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -49,9 +60,10 @@ function timeOf(m: Message | undefined): string {
 interface HomeScreenProps {
   onOpenChannel: (channelId: string) => void;
   onOpenSettings: () => void;
+  onOpenNotifications: () => void;
 }
 
-export function HomeScreen({ onOpenChannel, onOpenSettings }: HomeScreenProps) {
+export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications }: HomeScreenProps) {
   const messages = useChatStore((s) => s.messages);
   const channels = useChatStore((s) => s.channels);
   const status = useChatStore((s) => s.status);
@@ -62,6 +74,11 @@ export function HomeScreen({ onOpenChannel, onOpenSettings }: HomeScreenProps) {
   const createChannel = useChatStore((s) => s.createChannel);
   const removeChannel = useChatStore((s) => s.removeChannel);
   const restoreChannel = useChatStore((s) => s.restoreChannel);
+  const inviteToChannel = useChatStore((s) => s.inviteToChannel);
+  const renameChannel = useChatStore((s) => s.renameChannel);
+  const invites = useChatStore((s) => s.invites);
+  const acceptances = useChatStore((s) => s.acceptances);
+  const notifCount = invites.length + acceptances.length;
 
   // deleting a channel wipes its notes too — give a 5s undo window
   const deleteChannel = (channelId: string) => {
@@ -82,6 +99,29 @@ export function HomeScreen({ onOpenChannel, onOpenSettings }: HomeScreenProps) {
   const [picking, setPicking] = useState(false);
   const [createKind, setCreateKind] = useState<'personal' | 'todo' | null>(null);
   const [channelName, setChannelName] = useState('');
+
+  /** per-channel menu (edit / invite / delete) + the rename dialog */
+  const [menuChannelId, setMenuChannelId] = useState<string | null>(null);
+  const [editChannelId, setEditChannelId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const menuChannel = channels.find((c) => c.id === menuChannelId) ?? null;
+
+  const invite = (channelId: string) => {
+    inviteToChannel(channelId);
+    setMenuChannelId(null);
+    toast(`Invited ${peerName} to collaborate — she'll see it in her notifications`);
+  };
+
+  const openRename = (channelId: string, current: string) => {
+    setEditChannelId(channelId);
+    setEditName(current);
+    setMenuChannelId(null);
+  };
+
+  const submitRename = () => {
+    if (editChannelId && editName.trim()) renameChannel(editChannelId, editName);
+    setEditChannelId(null);
+  };
 
   const lastIn = (channelId: string) =>
     [...messages].reverse().find((m) => (m.channelId ?? DM_CHANNEL_ID) === channelId);
@@ -120,6 +160,24 @@ export function HomeScreen({ onOpenChannel, onOpenSettings }: HomeScreenProps) {
           <Button
             variant="ghost"
             size="icon"
+            className="relative cursor-pointer"
+            onClick={onOpenNotifications}
+            aria-label="Notifications"
+            data-testid="home-notifications-btn"
+          >
+            <Bell />
+            {notifCount > 0 && (
+              <span
+                className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground"
+                data-testid="home-notifications-badge"
+              >
+                {notifCount}
+              </span>
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             className="cursor-pointer"
             onClick={onOpenSettings}
             aria-label="Settings"
@@ -128,13 +186,15 @@ export function HomeScreen({ onOpenChannel, onOpenSettings }: HomeScreenProps) {
             <Settings />
           </Button>
           {myProfile && (
-            <div
-              className="flex size-8 items-center justify-center rounded-full text-sm font-semibold text-white"
-              style={{ backgroundColor: myProfile.color }}
-              data-testid="home-my-avatar"
-            >
-              {myProfile.name[0].toUpperCase()}
-            </div>
+            <Avatar className="size-8" data-testid="home-my-avatar">
+              {myProfile.avatar && <AvatarImage src={myProfile.avatar} alt={myProfile.name} />}
+              <AvatarFallback
+                className="text-sm font-semibold text-white"
+                style={{ backgroundColor: myProfile.color }}
+              >
+                {myProfile.name[0].toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
           )}
         </div>
       </header>
@@ -149,6 +209,7 @@ export function HomeScreen({ onOpenChannel, onOpenSettings }: HomeScreenProps) {
           data-testid="home-dm-row"
         >
           <Avatar size="lg">
+            {peerProfile?.avatar && <AvatarImage src={peerProfile.avatar} alt={peerName} />}
             <AvatarFallback
               className="text-white"
               style={peerProfile ? { backgroundColor: peerProfile.color } : undefined}
@@ -182,10 +243,10 @@ export function HomeScreen({ onOpenChannel, onOpenSettings }: HomeScreenProps) {
           </div>
         </motion.button>
 
-        {/* personal channels — this device only */}
+        {/* personal channels (device-local until shared via an accepted invite) */}
         {channels.length > 0 && (
           <p className="px-5 pt-4 pb-1 text-xs font-medium text-muted-foreground">
-            Your channels · only you can see these
+            Your channels
           </p>
         )}
         {channels.map((channel) => {
@@ -204,7 +265,18 @@ export function HomeScreen({ onOpenChannel, onOpenSettings }: HomeScreenProps) {
                   {channel.kind === 'todo' ? <ListTodo /> : <Hash />}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold">{channel.name}</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-sm font-semibold">{channel.name}</span>
+                    {channel.shared && (
+                      <span
+                        className="flex items-center text-primary [&_svg]:size-3.5"
+                        title={`Synced with ${peerName}`}
+                        data-testid={`channel-shared-${channel.id}`}
+                      >
+                        <RefreshCw />
+                      </span>
+                    )}
+                  </span>
                   <span className="block truncate text-xs text-muted-foreground">
                     {channel.kind === 'todo' ? todoPreview(channel.id) : previewOf(last)}
                   </span>
@@ -212,12 +284,12 @@ export function HomeScreen({ onOpenChannel, onOpenSettings }: HomeScreenProps) {
                 <span className="text-[11px] text-muted-foreground">{timeOf(last)}</span>
               </button>
               <button
-                onClick={() => deleteChannel(channel.id)}
-                aria-label={`Delete ${channel.name}`}
-                data-testid={`delete-channel-${channel.id}`}
-                className="cursor-pointer p-1 text-muted-foreground/40 transition-colors hover:text-destructive [&_svg]:size-4"
+                onClick={() => setMenuChannelId(channel.id)}
+                aria-label={`${channel.name} menu`}
+                data-testid={`channel-menu-${channel.id}`}
+                className="cursor-pointer p-1 text-muted-foreground/50 transition-colors hover:text-foreground [&_svg]:size-4.5"
               >
-                <Trash2 />
+                <MoreVertical />
               </button>
             </div>
           );
@@ -312,6 +384,81 @@ export function HomeScreen({ onOpenChannel, onOpenSettings }: HomeScreenProps) {
               data-testid="channel-create-confirm"
             >
               Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* per-channel menu: edit name / invite to collaborate / delete */}
+      <Drawer open={menuChannel !== null} onOpenChange={(open) => !open && setMenuChannelId(null)}>
+        <DrawerContent data-testid="channel-menu-sheet">
+          <DrawerHeader>
+            <DrawerTitle className="truncate">#{menuChannel?.name}</DrawerTitle>
+            <p className="text-xs text-muted-foreground">
+              {menuChannel?.shared
+                ? `Collaborating with ${peerName} — changes sync to both of you.`
+                : `Only on this phone. Invite ${peerName} to collaborate.`}
+            </p>
+          </DrawerHeader>
+          <div className="flex flex-col px-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <button
+              onClick={() => menuChannel && openRename(menuChannel.id, menuChannel.name)}
+              data-testid="channel-menu-edit"
+              className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-muted [&_svg]:size-4.5"
+            >
+              <Pencil />
+              <span className="text-sm font-medium">Edit name</span>
+            </button>
+            {!menuChannel?.shared && (
+              <button
+                onClick={() => menuChannel && invite(menuChannel.id)}
+                data-testid="channel-menu-invite"
+                className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-muted [&_svg]:size-4.5"
+              >
+                <UserPlus />
+                <span>
+                  <span className="block text-sm font-medium">Invite to collaborate</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Sends {peerName} a notification to join
+                  </span>
+                </span>
+              </button>
+            )}
+            <button
+              onClick={() => {
+                if (menuChannel) deleteChannel(menuChannel.id);
+                setMenuChannelId(null);
+              }}
+              data-testid="channel-menu-delete"
+              className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left text-destructive transition-colors hover:bg-destructive/10 [&_svg]:size-4.5"
+            >
+              <Trash2 />
+              <span className="text-sm font-medium">Delete channel</span>
+            </button>
+          </div>
+        </DrawerContent>
+      </Drawer>
+
+      <Dialog open={editChannelId !== null} onOpenChange={(open) => !open && setEditChannelId(null)}>
+        <DialogContent className="max-w-sm" data-testid="rename-channel-dialog">
+          <DialogHeader>
+            <DialogTitle>Edit channel name</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submitRename()}
+            autoFocus
+            data-testid="rename-channel-input"
+          />
+          <DialogFooter>
+            <Button
+              onClick={submitRename}
+              disabled={!editName.trim()}
+              className="cursor-pointer"
+              data-testid="rename-channel-confirm"
+            >
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

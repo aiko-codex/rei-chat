@@ -119,3 +119,21 @@ export async function getHistoryCursor(): Promise<number> {
 export async function setHistoryCursor(seq: number): Promise<void> {
   await (await db()).put('meta', seq, 'history-cursor');
 }
+
+/** server overlay cursor (reactions + read receipts, last seen seq) */
+export async function getMetaCursor(): Promise<number> {
+  return (await (await db()).get('meta', 'meta-cursor')) ?? 0;
+}
+
+export async function setMetaCursor(seq: number): Promise<void> {
+  await (await db()).put('meta', seq, 'meta-cursor');
+}
+
+/** personal-channel/todo backup cursor (last seen seq) */
+export async function getLocalCursor(): Promise<number> {
+  return (await (await db()).get('meta', 'local-cursor')) ?? 0;
+}
+
+export async function setLocalCursor(seq: number): Promise<void> {
+  await (await db()).put('meta', seq, 'local-cursor');
+}

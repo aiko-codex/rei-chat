@@ -106,6 +106,8 @@ export function startPeerService(): void {
         flushOutbox(p);
         // catch anything that went through the server while we were apart
         void store.syncHistory();
+        void store.syncMeta();
+        void store.syncLocal();
       } else {
         store.setPeerTyping(false);
       }

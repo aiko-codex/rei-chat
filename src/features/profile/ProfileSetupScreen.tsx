@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { AvatarPicker } from '@/features/profile/AvatarPicker';
 import type { Profile } from '@/lib/types';
 
 const AVATAR_COLORS = ['#f43f5e', '#a855f7', '#3b82f6', '#10b981', '#f59e0b', '#64748b'];
@@ -17,11 +18,12 @@ interface ProfileSetupScreenProps {
 export function ProfileSetupScreen({ onDone }: ProfileSetupScreenProps) {
   const [name, setName] = useState('');
   const [color, setColor] = useState(AVATAR_COLORS[0]);
+  const [avatar, setAvatar] = useState<string | undefined>(undefined);
 
   const submit = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    onDone({ name: trimmed, color });
+    onDone({ name: trimmed, color, avatar });
   };
 
   return (
@@ -34,13 +36,12 @@ export function ProfileSetupScreen({ onDone }: ProfileSetupScreenProps) {
         animate={{ opacity: 1, y: 0 }}
         className="flex flex-col items-center gap-6"
       >
-        <div
-          className="flex size-24 items-center justify-center rounded-full text-4xl font-semibold text-white"
-          style={{ backgroundColor: color }}
-          data-testid="profile-avatar-preview"
-        >
-          {name.trim() ? name.trim()[0].toUpperCase() : '?'}
-        </div>
+        <AvatarPicker
+          name={name.trim() || '?'}
+          color={color}
+          avatar={avatar}
+          onChange={setAvatar}
+        />
         <div className="text-center">
           <h1 className="text-xl font-semibold">Who are you?</h1>
           <p className="mt-1 text-sm text-muted-foreground">

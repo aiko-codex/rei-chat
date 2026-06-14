@@ -1,5 +1,5 @@
 import { ChevronLeft, Hash, Headphones, ListTodo, Phone, Video, Settings } from 'lucide-react';
-import { Avatar, AvatarBadge, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 
 interface ChatHeaderProps {
@@ -7,6 +7,8 @@ interface ChatHeaderProps {
   subtitle?: string;
   /** avatar background; ignored for channels */
   avatarColor?: string;
+  /** avatar image (data URL); falls back to color + initial */
+  avatarUrl?: string;
   online?: boolean;
   /** personal text channel: # icon, no call buttons */
   isChannel?: boolean;
@@ -23,6 +25,7 @@ export function ChatHeader({
   title,
   subtitle,
   avatarColor,
+  avatarUrl,
   online,
   isChannel,
   isTodo,
@@ -53,6 +56,7 @@ export function ChatHeader({
         </span>
       ) : (
         <Avatar size="lg">
+          {avatarUrl && <AvatarImage src={avatarUrl} alt={title} />}
           <AvatarFallback
             className="text-white"
             style={avatarColor ? { backgroundColor: avatarColor } : undefined}

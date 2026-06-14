@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff } from 'lucide-react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { useCallStore } from '@/store/call-store';
 import { useChatStore } from '@/store/chat-store';
@@ -146,6 +146,7 @@ export function CallScreen() {
             transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
           >
             <Avatar className="size-24">
+              {peerProfile?.avatar && <AvatarImage src={peerProfile.avatar} alt={name} />}
               <AvatarFallback
                 className="text-3xl"
                 style={peerProfile?.color ? { backgroundColor: peerProfile.color } : undefined}

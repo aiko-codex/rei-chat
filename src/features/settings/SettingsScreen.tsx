@@ -6,18 +6,25 @@ import {
   Eraser,
   KeyRound,
   Lock,
+  Monitor,
+  Moon,
+  Palette,
   QrCode,
   ShieldCheck,
+  Sun,
   Type,
   Unplug,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useChatStore } from '@/store/chat-store';
 import { clearPairing } from '@/lib/pairing';
+import { sendPeerProfile } from '@/lib/peer-service';
 import { UI_SCALES, getUIScale, setUIScale } from '@/lib/ui-scale';
+import { THEMES, getTheme, setTheme, type ThemeId } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import { clearServerCiphertext, fetchVersions, type DeviceVersion } from '@/lib/message-api';
 import { ChangePINDialog } from './ChangePINDialog';
@@ -107,6 +114,55 @@ function TextSizeControl() {
   );
 }
 
+const THEME_ICONS: Record<ThemeId, typeof Sun> = {
+  light: Sun,
+  dark: Moon,
+  system: Monitor,
+};
+
+function ThemeControl() {
+  const [theme, setThemeState] = useState<ThemeId>(() => getTheme());
+
+  const pick = (id: string) => {
+    if (id !== 'light' && id !== 'dark' && id !== 'system') return; // ignore deselect
+    setThemeState(id);
+    setTheme(id); // applies live to the whole UI
+  };
+
+  return (
+    <div className="px-4 py-3" data-testid="settings-theme">
+      <div className="mb-2 flex items-center gap-3">
+        <Moon className="size-4 text-muted-foreground" />
+        <span className="flex-1 text-sm font-medium">Theme</span>
+      </div>
+      <ToggleGroup
+        type="single"
+        value={theme}
+        onValueChange={pick}
+        variant="outline"
+        spacing={0}
+        className="w-full"
+      >
+        {THEMES.map((opt) => {
+          const Icon = THEME_ICONS[opt.id];
+          return (
+            <ToggleGroupItem
+              key={opt.id}
+              value={opt.id}
+              aria-label={opt.label}
+              data-testid={`theme-${opt.id}`}
+              className="h-auto flex-1 flex-col gap-1 py-2.5 data-[state=on]:text-primary"
+            >
+              <Icon className="size-4.5" />
+              <span className="text-[11px]">{opt.label}</span>
+            </ToggleGroupItem>
+          );
+        })}
+      </ToggleGroup>
+    </div>
+  );
+}
+
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
   const m = Math.floor(diff / 60_000);
@@ -176,7 +232,8 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
   };
 
   const handleSaveProfile = (profile: Profile) => {
-    setMyProfile(profile);
+    setMyProfile(profile); // persists locally + publishes to the server
+    sendPeerProfile(profile); // instant push if currently P2P-connected
   };
 
   const handleResetPairing = () => {
@@ -223,6 +280,7 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
           data-testid="settings-edit-profile"
         >
           <Avatar className="size-14">
+            {myProfile?.avatar && <AvatarImage src={myProfile.avatar} alt={myProfile.name} />}
             <AvatarFallback
               className="text-lg text-white font-semibold"
               style={{ backgroundColor: myProfile?.color }}
@@ -256,6 +314,7 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
         />
 
         <SectionLabel>Appearance</SectionLabel>
+        <ThemeControl />
         <TextSizeControl />
 
         <SectionLabel>General</SectionLabel>

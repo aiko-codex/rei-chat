@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { AvatarPicker } from '@/features/profile/AvatarPicker';
 import type { Profile } from '@/lib/types';
 
 interface EditProfileDialogProps {
@@ -40,6 +40,7 @@ export function EditProfileDialog({
 }: EditProfileDialogProps) {
   const [name, setName] = useState(profile?.name ?? '');
   const [color, setColor] = useState(profile?.color ?? COLORS[0]);
+  const [avatar, setAvatar] = useState<string | undefined>(profile?.avatar);
 
   const handleSave = () => {
     const trimmed = name.trim();
@@ -51,7 +52,7 @@ export function EditProfileDialog({
       toast.error('Name must be 30 characters or less');
       return;
     }
-    onSave({ name: trimmed, color });
+    onSave({ name: trimmed, color, avatar });
     toast.success('Profile updated');
     onOpenChange(false);
   };
@@ -64,6 +65,8 @@ export function EditProfileDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <AvatarPicker name={name} color={color} avatar={avatar} onChange={setAvatar} />
+
           <div>
             <label className="block text-sm font-medium mb-3">Your Name</label>
             <Input
@@ -98,17 +101,6 @@ export function EditProfileDialog({
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-2">Preview</label>
-            <div className="flex items-center gap-3 rounded-lg bg-muted p-3">
-              <Avatar className="size-10">
-                <AvatarFallback className="text-white text-sm font-semibold" style={{ backgroundColor: color }}>
-                  {name[0]?.toUpperCase() ?? '?'}
-                </AvatarFallback>
-              </Avatar>
-              <p className="font-medium">{name || 'Name'}</p>
-            </div>
-          </div>
         </div>
 
         <DialogFooter className="flex gap-2">

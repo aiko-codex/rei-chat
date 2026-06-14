@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { ArrowLeft, Headphones, HeadphoneOff, Mic, MicOff, PhoneOff } from 'lucide-react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useVoiceRoomStore } from '@/store/voice-room-store';
@@ -40,12 +40,13 @@ function useSpeaking(stream: MediaStream | null, active: boolean): boolean {
 interface ParticipantTileProps {
   name: string;
   color?: string;
+  avatar?: string;
   inChannel: boolean;
   speaking: boolean;
   muted: boolean;
 }
 
-function ParticipantTile({ name, color, inChannel, speaking, muted }: ParticipantTileProps) {
+function ParticipantTile({ name, color, avatar, inChannel, speaking, muted }: ParticipantTileProps) {
   return (
     <div
       className={cn(
@@ -56,6 +57,7 @@ function ParticipantTile({ name, color, inChannel, speaking, muted }: Participan
     >
       <div className={cn('rounded-full p-[3px] transition-colors', speaking ? 'bg-emerald-500' : 'bg-transparent')}>
         <Avatar className="size-16">
+          {avatar && <AvatarImage src={avatar} alt={name} />}
           <AvatarFallback className="text-xl" style={color ? { backgroundColor: color } : undefined}>
             {name[0]}
           </AvatarFallback>
@@ -127,6 +129,7 @@ export function VoiceChannelScreen({ onBack }: VoiceChannelScreenProps) {
           <ParticipantTile
             name={myProfile?.name ?? 'You'}
             color={myProfile?.color}
+            avatar={myProfile?.avatar}
             inChannel={joined}
             speaking={iSpeak}
             muted={muted}
@@ -134,6 +137,7 @@ export function VoiceChannelScreen({ onBack }: VoiceChannelScreenProps) {
           <ParticipantTile
             name={peerProfile?.name ?? 'Her'}
             color={peerProfile?.color}
+            avatar={peerProfile?.avatar}
             inChannel={peerJoined}
             speaking={peerSpeaks}
             muted={false}
