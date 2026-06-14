@@ -237,7 +237,6 @@ export function MessageBubble({
   isMine,
   isGroupEnd,
   replyTo,
-  replyToName,
   highlighted,
   onLongPress,
   onOpenImage,
@@ -248,6 +247,7 @@ export function MessageBubble({
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
   const lastTap = useRef(0);
+  const displayName = useChatStore((s) => s.displayName);
 
   const handleTap = () => {
     if (longPressFired.current || !onDoubleTapReact) return;
@@ -306,7 +306,6 @@ export function MessageBubble({
       className={cn(
         'flex w-full select-none [-webkit-touch-callout:none]',
         isMine ? 'justify-end' : 'justify-start',
-        message.status === 'failed' && 'flex-col items-end gap-1',
         reactions.length > 0 && 'mb-3',
       )}
       data-testid={`message-${message.id}`}
@@ -329,9 +328,30 @@ export function MessageBubble({
         onLongPress(message);
       }}
     >
+      <div className={cn('flex max-w-[82%] flex-col gap-1', isMine ? 'items-end' : 'items-start')}>
+        {replyTo && (
+          // minimal Instagram-style quote: a tiny "replied" label + a faint
+          // pill of the original, above the bubble (tap to jump to it)
+          <button
+            onClick={() => onQuoteClick?.(replyTo.id)}
+            data-testid={`quote-${message.id}`}
+            className={cn(
+              'flex max-w-full cursor-pointer flex-col gap-0.5',
+              isMine ? 'items-end' : 'items-start',
+            )}
+          >
+            <span className="px-2 text-[11px] text-muted-foreground">
+              {isMine ? 'You replied' : `${displayName(message.senderId)} replied`}
+            </span>
+            <span className="flex max-w-[15rem] items-center gap-1 truncate rounded-2xl bg-muted/70 px-3 py-1.5 text-xs text-muted-foreground">
+              <QuoteIcon kind={replyTo.media?.kind} />
+              <span className="truncate">{quoteSnippet(replyTo)}</span>
+            </span>
+          </button>
+        )}
       <div
         className={cn(
-          'relative max-w-[78%] select-none [-webkit-touch-callout:none] wrap-break-word text-sm leading-relaxed',
+          'relative max-w-full select-none [-webkit-touch-callout:none] wrap-break-word text-sm leading-relaxed',
           plainMedia
             ? 'rounded-2xl'
             : [
@@ -342,24 +362,6 @@ export function MessageBubble({
           highlighted && 'rounded-2xl ring-2 ring-ring transition-shadow',
         )}
       >
-        {replyTo && (
-          <button
-            onClick={() => onQuoteClick?.(replyTo.id)}
-            data-testid={`quote-${message.id}`}
-            className={cn(
-              'mb-1.5 flex w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs',
-              isMine
-                ? 'bg-primary-foreground/10 text-primary-foreground/70'
-                : 'bg-foreground/5 text-muted-foreground',
-            )}
-          >
-            <span className={cn('shrink-0 font-semibold', isMine ? 'text-primary-foreground/90' : 'text-primary')}>
-              {replyToName}
-            </span>
-            <QuoteIcon kind={replyTo.media?.kind} />
-            <span className="truncate">{quoteSnippet(replyTo)}</span>
-          </button>
-        )}
         {message.media && (
           <MediaContent
             media={message.media}
@@ -412,15 +414,19 @@ export function MessageBubble({
               isMine ? 'text-primary-foreground/70' : 'text-muted-foreground',
             )}
           >
+            {message.edited && <span className="italic">edited</span>}
             {formatTime(message.sentAt)}
             {statusIcon}
           </span>
         )}
         {reactions.length > 0 && (
+          // sits in a clean cut-out at the bubble's bottom edge: the ring is the
+          // chat-background colour, carving an "invisible border" around it
+          // (Instagram style) so the emoji reads as attached to the bubble
           <span
             className={cn(
-              'absolute -bottom-3.5 flex items-center rounded-full border bg-background px-1.5 py-0.5 text-xs shadow-sm',
-              isMine ? 'right-2' : 'left-2',
+              'absolute -bottom-3 flex items-center gap-0.5 rounded-full bg-background px-1 py-0.5 text-[15px] leading-none shadow-sm ring-2 ring-background',
+              isMine ? 'right-1.5' : 'left-1.5',
             )}
             data-testid={`reactions-${message.id}`}
           >
@@ -428,18 +434,19 @@ export function MessageBubble({
           </span>
         )}
       </div>
-      {isMine && message.status === 'failed' && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onRetry?.(message);
-          }}
-          data-testid={`retry-${message.id}`}
-          className="cursor-pointer text-xs font-medium text-destructive"
-        >
-          Not delivered — tap to retry
-        </button>
-      )}
+        {isMine && message.status === 'failed' && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRetry?.(message);
+            }}
+            data-testid={`retry-${message.id}`}
+            className="mt-1 cursor-pointer text-xs font-medium text-destructive"
+          >
+            Not delivered — tap to retry
+          </button>
+        )}
+      </div>
     </motion.div>
   );
 }

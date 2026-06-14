@@ -48,7 +48,7 @@ export async function fetchHistory(
   since: number,
 ): Promise<{ messages: RemoteMessage[]; cursor: number }> {
   const res = await fetch(
-    `${SIGNAL_URL}?action=history&room=${encodeURIComponent(getRoomId())}&since=${since}`,
+    `${SIGNAL_URL}?action=history&room=${encodeURIComponent(getRoomId())}&deviceId=${encodeURIComponent(getDeviceId())}&since=${since}`,
   );
   if (!res.ok) throw new Error(`history ${res.status}`);
   const data: { messages: HistoryRow[]; cursor: number } = await res.json();
@@ -107,7 +107,7 @@ export async function downloadMedia(id: string, mimeType: string): Promise<Blob 
     let idx = 0;
     let total = 1;
     while (idx < total) {
-      const res = await fetch(`${SIGNAL_URL}?action=media_get&room=${room}&id=${encodeURIComponent(id)}&idx=${idx}`);
+      const res = await fetch(`${SIGNAL_URL}?action=media_get&room=${room}&deviceId=${encodeURIComponent(getDeviceId())}&id=${encodeURIComponent(id)}&idx=${idx}`);
       if (!res.ok) return null;
       const data: { idx: number; total: number; ciphertext: string } = await res.json();
       total = data.total;
@@ -157,7 +157,7 @@ export async function fetchProfiles(): Promise<RemoteProfile[]> {
   if (!SIGNAL_URL) return [];
   try {
     const res = await fetch(
-      `${SIGNAL_URL}?action=profiles&room=${encodeURIComponent(getRoomId())}`,
+      `${SIGNAL_URL}?action=profiles&room=${encodeURIComponent(getRoomId())}&deviceId=${encodeURIComponent(getDeviceId())}`,
     );
     if (!res.ok) return [];
     const data: { profiles: Array<{ deviceId: string; ciphertext: string; updatedAt: number }> } =
@@ -216,7 +216,7 @@ export async function fetchMeta(since: number): Promise<{ rows: RemoteMeta[]; cu
   if (!SIGNAL_URL) return { rows: [], cursor: since };
   try {
     const res = await fetch(
-      `${SIGNAL_URL}?action=meta&room=${encodeURIComponent(getRoomId())}&since=${since}`,
+      `${SIGNAL_URL}?action=meta&room=${encodeURIComponent(getRoomId())}&deviceId=${encodeURIComponent(getDeviceId())}&since=${since}`,
     );
     if (!res.ok) return { rows: [], cursor: since };
     const data: { rows: Array<{ seq: number; deviceId: string; key: string; ciphertext: string }>; cursor: number } =
@@ -255,7 +255,7 @@ export async function uploadLocalItem(key: string, value: unknown): Promise<bool
     const res = await fetch(`${SIGNAL_URL}?action=local_put`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room: getRoomId(), key, ciphertext: encryptJson(value) }),
+      body: JSON.stringify({ room: getRoomId(), deviceId: getDeviceId(), key, ciphertext: encryptJson(value) }),
     });
     return res.ok;
   } catch {
@@ -270,7 +270,7 @@ export async function deleteLocalItem(key: string): Promise<boolean> {
     const res = await fetch(`${SIGNAL_URL}?action=local_put`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room: getRoomId(), key, ciphertext: '' }),
+      body: JSON.stringify({ room: getRoomId(), deviceId: getDeviceId(), key, ciphertext: '' }),
     });
     return res.ok;
   } catch {
@@ -283,7 +283,7 @@ export async function fetchLocal(since: number): Promise<{ rows: RemoteLocalItem
   if (!SIGNAL_URL) return { rows: [], cursor: since };
   try {
     const res = await fetch(
-      `${SIGNAL_URL}?action=local&room=${encodeURIComponent(getRoomId())}&since=${since}`,
+      `${SIGNAL_URL}?action=local&room=${encodeURIComponent(getRoomId())}&deviceId=${encodeURIComponent(getDeviceId())}&since=${since}`,
     );
     if (!res.ok) return { rows: [], cursor: since };
     const data: { rows: Array<{ seq: number; key: string; ciphertext: string }>; cursor: number } =
@@ -384,7 +384,7 @@ export async function ackInvite(channelId: string): Promise<boolean> {
     const res = await fetch(`${SIGNAL_URL}?action=invite_ack`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room: getRoomId(), channelId }),
+      body: JSON.stringify({ room: getRoomId(), deviceId: getDeviceId(), channelId }),
     });
     return res.ok;
   } catch {
@@ -398,7 +398,7 @@ export async function respondInvite(channelId: string, status: 'accepted' | 'dec
     const res = await fetch(`${SIGNAL_URL}?action=invite_respond`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room: getRoomId(), channelId, status }),
+      body: JSON.stringify({ room: getRoomId(), deviceId: getDeviceId(), channelId, status }),
     });
     return res.ok;
   } catch {
@@ -450,12 +450,80 @@ export async function fetchVersions(): Promise<DeviceVersion[]> {
   }
 }
 
+export interface SpaceMember {
+  deviceId: string;
+  addedAt: number;
+  mine: boolean;
+}
+
+export interface JoinResult {
+  ok: boolean;
+  /** true when the room already has its two devices and we're not one of them */
+  full: boolean;
+  members: SpaceMember[];
+}
+
+/**
+ * Claim/confirm this device's slot in the room. The room locks to the first two
+ * devices; a third device gets `full: true` and is refused all data. Call this
+ * before syncing anything.
+ */
+export async function joinSpace(): Promise<JoinResult> {
+  if (!SIGNAL_URL) return { ok: true, full: false, members: [] };
+  const me = getDeviceId();
+  try {
+    const res = await fetch(`${SIGNAL_URL}?action=join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ room: getRoomId(), deviceId: me }),
+    });
+    const data: { ok?: boolean; full?: boolean; members?: Array<{ deviceId: string; addedAt: number }> } =
+      await res.json().catch(() => ({}));
+    if (res.status === 403 || data.full) return { ok: false, full: true, members: [] };
+    const members = (data.members ?? []).map((m) => ({ ...m, mine: m.deviceId === me }));
+    return { ok: Boolean(data.ok), full: false, members };
+  } catch {
+    // network down — don't lock the user out; treat as not-full, sync will retry
+    return { ok: true, full: false, members: [] };
+  }
+}
+
+export async function fetchMembers(): Promise<SpaceMember[]> {
+  if (!SIGNAL_URL) return [];
+  const me = getDeviceId();
+  try {
+    const res = await fetch(
+      `${SIGNAL_URL}?action=members&room=${encodeURIComponent(getRoomId())}&deviceId=${encodeURIComponent(me)}`,
+    );
+    if (!res.ok) return [];
+    const data: { members?: Array<{ deviceId: string; addedAt: number }> } = await res.json();
+    return (data.members ?? []).map((m) => ({ ...m, mine: m.deviceId === me }));
+  } catch {
+    return [];
+  }
+}
+
+/** free a slot by removing another device (so a reinstalled phone can re-pair) */
+export async function removeMember(target: string): Promise<boolean> {
+  if (!SIGNAL_URL) return false;
+  try {
+    const res = await fetch(`${SIGNAL_URL}?action=remove_member`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ room: getRoomId(), deviceId: getDeviceId(), target }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function removeRemoteMessage(id: string): Promise<void> {
   try {
     await fetch(`${SIGNAL_URL}?action=remove`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room: getRoomId(), id }),
+      body: JSON.stringify({ room: getRoomId(), deviceId: getDeviceId(), id }),
     });
   } catch {
     // best effort — a failed unsend leaves the ciphertext row behind
@@ -468,7 +536,7 @@ export async function clearServerCiphertext(): Promise<boolean> {
     const res = await fetch(`${SIGNAL_URL}?action=wipe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room: getRoomId() }),
+      body: JSON.stringify({ room: getRoomId(), deviceId: getDeviceId() }),
     });
     return res.ok;
   } catch {

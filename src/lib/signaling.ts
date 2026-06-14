@@ -2,6 +2,7 @@
  * Long-polling client for the PHP signaling endpoint.
  * Carries only WebRTC negotiation envelopes — never chat content.
  */
+import { getDeviceId } from './identity';
 
 export interface SignalEnvelope {
   id: number;
@@ -30,7 +31,7 @@ export class SignalingClient {
       await fetch(`${this.endpoint}?action=signal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ room: this.room, clientId: this.clientId, type, payload }),
+        body: JSON.stringify({ room: this.room, deviceId: getDeviceId(), clientId: this.clientId, type, payload }),
       });
     } catch {
       // endpoint unreachable — peer stays in 'connecting'/'offline'
@@ -42,7 +43,9 @@ export class SignalingClient {
     this.running = true;
     // ignore anything posted before we joined
     try {
-      const res = await fetch(`${this.endpoint}?action=cursor&room=${encodeURIComponent(this.room)}`);
+      const res = await fetch(
+        `${this.endpoint}?action=cursor&room=${encodeURIComponent(this.room)}&deviceId=${encodeURIComponent(getDeviceId())}`,
+      );
       const data: { cursor: number } = await res.json();
       this.cursor = data.cursor;
     } catch {
@@ -62,7 +65,7 @@ export class SignalingClient {
         this.abort = new AbortController();
         const url =
           `${this.endpoint}?action=poll&room=${encodeURIComponent(this.room)}` +
-          `&clientId=${this.clientId}&since=${this.cursor}`;
+          `&deviceId=${encodeURIComponent(getDeviceId())}&clientId=${this.clientId}&since=${this.cursor}`;
         const res = await fetch(url, { signal: this.abort.signal });
         if (!res.ok) throw new Error(`poll ${res.status}`);
         const data: { signals: SignalEnvelope[]; cursor: number } = await res.json();

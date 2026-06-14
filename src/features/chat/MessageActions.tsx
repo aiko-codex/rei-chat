@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Copy, Plus, Reply, Trash2, Undo2 } from 'lucide-react';
+import { Copy, Pencil, Plus, Reply, Trash2, Undo2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/store/chat-store';
 import { ReactionEmojiSheet } from './ReactionEmojiSheet';
@@ -42,6 +42,7 @@ export interface MessageActionsProps {
   onReact: (emoji: string) => void;
   onReply: () => void;
   onCopy: () => void;
+  onEdit: () => void;
   onDeleteForMe: () => void;
   onUnsend: () => void;
 }
@@ -53,6 +54,7 @@ export function MessageActions({
   onReact,
   onReply,
   onCopy,
+  onEdit,
   onDeleteForMe,
   onUnsend,
 }: MessageActionsProps) {
@@ -75,6 +77,7 @@ export function MessageActions({
     else if (key === 'more') setPickerOpen(true);
     else if (key === 'reply') onReply();
     else if (key === 'copy') onCopy();
+    else if (key === 'edit') onEdit();
     else if (key === 'delete') onDeleteForMe();
     else if (key === 'unsend') onUnsend();
   };
@@ -269,6 +272,16 @@ export function MessageActions({
                   hovered={hovered === 'copy'}
                   onClick={onCopy}
                   testId="action-copy"
+                />
+              )}
+              {isMine && message.text && !message.media && (
+                <ActionRow
+                  icon={<Pencil />}
+                  label="Edit"
+                  slideKey="edit"
+                  hovered={hovered === 'edit'}
+                  onClick={onEdit}
+                  testId="action-edit"
                 />
               )}
               <ActionRow

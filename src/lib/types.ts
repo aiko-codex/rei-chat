@@ -80,6 +80,8 @@ export interface Message {
   reactions?: Partial<Record<UserId, string>>;
   /** id of the message this one replies to */
   replyToId?: string;
+  /** true once the sender has edited the text after sending */
+  edited?: boolean;
   /** todo channels reuse message rows as items; checked state lives here */
   done?: boolean;
   /** todo: optional deadline (epoch ms) — drives the time progress bar */

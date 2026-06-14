@@ -50,6 +50,7 @@ export function ChatScreen({
 
     const [actionTarget, setActionTarget] = useState<Message | null>(null);
     const [replyTarget, setReplyTarget] = useState<Message | null>(null);
+    const [editTarget, setEditTarget] = useState<Message | null>(null);
     const [lightboxTarget, setLightboxTarget] = useState<Message | null>(null);
 
     const messages = allMessages.filter(
@@ -196,6 +197,30 @@ export function ChatScreen({
         setActionTarget(null);
     };
 
+    // Instagram-style: load the message text into the composer to edit in place
+    const startEdit = () => {
+        if (!actionTarget) return;
+        setEditTarget(actionTarget);
+        setReplyTarget(null);
+        setActionTarget(null);
+    };
+
+    const submitEdit = (newText: string) => {
+        if (!editTarget) return;
+        const trimmed = newText.trim();
+        if (!trimmed) {
+            setEditTarget(null);
+            return;
+        }
+        // editing = re-send the same id with new text (+ edited flag): reuses the
+        // P2P upsert path and the server upsert so it reaches her offline too
+        const edited: Message = { ...editTarget, text: trimmed, edited: true };
+        upsert(edited);
+        sendPeerMessage(edited);
+        if (SIGNAL_URL) void storeOnServer(edited);
+        setEditTarget(null);
+    };
+
     const displayName = useChatStore((s) => s.displayName);
 
     // todo channels get their own checklist UI instead of the message list
@@ -293,6 +318,9 @@ export function ChatScreen({
                     replyTarget ? displayName(replyTarget.senderId) : undefined
                 }
                 onCancelReply={() => setReplyTarget(null)}
+                editing={editTarget ? { id: editTarget.id, text: editTarget.text ?? '' } : null}
+                onEditSubmit={submitEdit}
+                onCancelEdit={() => setEditTarget(null)}
             />
             <MessageActions
                 message={actionTarget}
@@ -301,6 +329,7 @@ export function ChatScreen({
                 onReact={react}
                 onReply={reply}
                 onCopy={copyMessage}
+                onEdit={startEdit}
                 onDeleteForMe={deleteForMe}
                 onUnsend={unsend}
             />

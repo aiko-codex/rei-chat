@@ -23,7 +23,7 @@ import { joinCodeFromUrl } from '@/lib/pairing';
 import { useChatStore } from '@/store/chat-store';
 import { useCallStore } from '@/store/call-store';
 import { useVoiceRoomStore } from '@/store/voice-room-store';
-import { Headphones, PhoneOff } from 'lucide-react';
+import { Headphones, PhoneOff, ShieldX } from 'lucide-react';
 import { DM_CHANNEL_ID, type Screen } from '@/lib/types';
 
 // read once at boot, then clean the hash so the code isn't left in the URL
@@ -59,12 +59,22 @@ export default function App() {
         setupPWAUpdates();
     }, []);
 
-    // connection + history live at app level: receiving works on any screen
+    // device-membership lock: the room admits only its two devices. Claim our
+    // slot first; if the space is full (a 3rd device), don't sync or connect.
+    const membership = useChatStore((s) => s.membership);
     useEffect(() => {
         if (!unlocked || !paired) return;
-        void useChatStore.getState().hydrate();
-        startPeerService();
-        return () => stopPeerService();
+        let cancelled = false;
+        void (async () => {
+            await useChatStore.getState().registerDevice();
+            if (cancelled || useChatStore.getState().membership === 'full') return;
+            void useChatStore.getState().hydrate();
+            startPeerService();
+        })();
+        return () => {
+            cancelled = true;
+            stopPeerService();
+        };
     }, [unlocked, paired]);
 
     // Reliable delivery independent of the P2P link: every message is also
@@ -75,7 +85,7 @@ export default function App() {
     // (messages then arrive instantly over the data channel). Also sync the
     // moment the tab regains focus.
     useEffect(() => {
-        if (!unlocked || !paired || !SIGNAL_URL) return;
+        if (!unlocked || !paired || !SIGNAL_URL || membership === 'full') return;
         const tick = () => {
             if (document.visibilityState === 'visible') {
                 const s = useChatStore.getState();
@@ -97,7 +107,7 @@ export default function App() {
             clearInterval(id);
             document.removeEventListener('visibilitychange', onVisible);
         };
-    }, [unlocked, paired, peerStatus]);
+    }, [unlocked, paired, peerStatus, membership]);
 
     // keep the unlock grace window alive while the app is open + visible, so an
     // in-use session never locks mid-chat; if it lapsed while away, re-lock
@@ -284,6 +294,31 @@ export default function App() {
                 {inCall && (
                     <div className='absolute inset-0 z-20'>
                         <CallScreen />
+                    </div>
+                )}
+
+                {/* membership lock: a 3rd device is refused access to the space */}
+                {unlocked && paired && membership === 'full' && (
+                    <div
+                        className='absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-background px-8 text-center'
+                        data-testid='space-full-screen'
+                    >
+                        <span className='flex size-16 items-center justify-center rounded-full bg-destructive/10 text-destructive [&_svg]:size-8'>
+                            <ShieldX />
+                        </span>
+                        <h1 className='text-lg font-semibold'>This space is full</h1>
+                        <p className='max-w-xs text-sm leading-relaxed text-muted-foreground'>
+                            Your space is locked to two devices for safety. To use this device,
+                            open the other phone → <strong>Settings → Manage devices</strong> and
+                            remove a device to free a slot.
+                        </p>
+                        <button
+                            onClick={() => void useChatStore.getState().registerDevice()}
+                            className='cursor-pointer rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-foreground'
+                            data-testid='space-full-retry'
+                        >
+                            Try again
+                        </button>
                     </div>
                 )}
             </div>

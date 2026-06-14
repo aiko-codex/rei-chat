@@ -38,13 +38,17 @@ import {
   fetchHistory,
   fetchInvites,
   fetchLocal,
+  fetchMembers,
   fetchMeta,
   fetchProfiles,
+  joinSpace,
+  removeMember,
   respondInvite,
   sendInvite,
   uploadLocalItem,
   uploadMeta,
   uploadProfile,
+  type SpaceMember,
 } from '@/lib/message-api';
 import { mockMessages } from '@/lib/mock-data';
 import { loadReactions, persistReactions } from '@/lib/reactions';
@@ -132,6 +136,10 @@ interface ChatStore {
   lastSeen: Record<string, number>;
   /** epoch ms the peer has read the DM up to (drives our 'read' receipts) */
   peerReadAt: number;
+  /** device-membership lock: 'full' = this device was refused (room has its 2) */
+  membership: 'unknown' | 'member' | 'full';
+  /** the room's registered devices (for Settings → Manage devices) */
+  members: SpaceMember[];
   /** the 6 customizable quick reactions; slot 0 is the double-tap default */
   quickReactions: string[];
   /** pending collab invites the peer sent us, surfaced as notifications */
@@ -187,6 +195,13 @@ interface ChatStore {
   /** display name for a sender, with mock fallbacks */
   displayName: (senderId: UserId) => string;
 
+  /** claim this device's slot; sets membership to 'member' or 'full' */
+  registerDevice: () => Promise<void>;
+  /** reload the room's device list */
+  refreshMembers: () => Promise<void>;
+  /** remove a device to free a slot (replace a lost/reinstalled phone) */
+  removeDevice: (target: string) => Promise<void>;
+
   createChannel: (name: string, kind?: 'personal' | 'todo') => Channel;
   /** patch a todo item (done/completedAt/timeSpent/deadline) and persist */
   updateTodo: (id: string, patch: Partial<Message>) => void;
@@ -209,6 +224,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   peerProfile: readJson<Profile>(PEER_PROFILE_KEY),
   lastSeen: readJson<Record<string, number>>(LAST_SEEN_KEY) ?? {},
   peerReadAt: readNum(PEER_READ_KEY),
+  membership: 'unknown',
+  members: [],
   quickReactions: loadReactions(),
   invites: [],
   acceptances: [],
@@ -577,6 +594,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   setPeerTyping: (peerTyping) => set({ peerTyping }),
+
+  registerDevice: async () => {
+    const res = await joinSpace();
+    set({ membership: res.full ? 'full' : 'member', members: res.members });
+  },
+  refreshMembers: async () => {
+    set({ members: await fetchMembers() });
+  },
+  removeDevice: async (target) => {
+    await removeMember(target);
+    await get().refreshMembers();
+  },
 
   setQuickReactions: (reactions) => {
     persistReactions(reactions);

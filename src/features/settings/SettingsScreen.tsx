@@ -12,6 +12,7 @@ import {
   Palette,
   QrCode,
   ShieldCheck,
+  Smartphone,
   Sun,
   Type,
   Unplug,
@@ -30,6 +31,7 @@ import { ACCENTS, getAccentId, setAccent } from '@/lib/accent';
 import { cn } from '@/lib/utils';
 import { clearServerCiphertext, fetchVersions, type DeviceVersion } from '@/lib/message-api';
 import { ChangePINDialog } from './ChangePINDialog';
+import { ManageDevicesDialog } from './ManageDevicesDialog';
 import { EditProfileDialog } from './EditProfileDialog';
 import { PairDeviceDialog } from './PairDeviceDialog';
 import { NotificationsDialog } from './NotificationsDialog';
@@ -262,6 +264,7 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
   const manageVisible = versionTaps >= 5;
 
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [manageDevicesOpen, setManageDevicesOpen] = useState(false);
   const [changePinOpen, setChangePinOpen] = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [pairDeviceOpen, setPairDeviceOpen] = useState(false);
@@ -355,6 +358,13 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
           onClick={() => setPairDeviceOpen(true)}
           testId="settings-pair-device"
         />
+        <Row
+          icon={<Smartphone className="size-4" />}
+          label="Manage devices"
+          hint="Locked to 2 devices · remove one to free a slot"
+          onClick={() => setManageDevicesOpen(true)}
+          testId="settings-manage-devices"
+        />
 
         <SectionLabel>Appearance</SectionLabel>
         <Row
@@ -422,6 +432,7 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
       </div>
 
       <ChangePINDialog open={changePinOpen} onOpenChange={setChangePinOpen} />
+      <ManageDevicesDialog open={manageDevicesOpen} onOpenChange={setManageDevicesOpen} />
       <EditProfileDialog
         open={editProfileOpen}
         onOpenChange={setEditProfileOpen}
