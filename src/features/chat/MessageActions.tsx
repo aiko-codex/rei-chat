@@ -70,9 +70,11 @@ export function MessageActions({
     else if (key === 'unsend') onUnsend();
   };
 
-  // while the menu is open: (a) swallow background touch-scroll, (b) run the
-  // press-and-slide-to-select gesture — the original long-press touch is still
-  // down, so we track it on `window` and hit-test the option under the finger.
+  // while the menu is open, run the press-and-slide-to-select gesture. The
+  // original long-press touch is still down but its events stay bound to the
+  // bubble, so we track on document. TOUCH is driven by touch events (we
+  // preventDefault them, which also kills background scroll AND stops the
+  // browser from pan-cancelling the pointer); MOUSE/pen uses pointer events.
   useEffect(() => {
     if (!message) return;
     let current: string | null = null;
@@ -82,28 +84,26 @@ export function MessageActions({
       setHovered(k);
     };
 
-    const preventScroll = (e: TouchEvent) => e.preventDefault();
-
     const keyUnder = (x: number, y: number): string | null => {
       const el = document.elementFromPoint(x, y);
       const item = el?.closest('[data-slide-key]') as HTMLElement | null;
       return item?.dataset.slideKey ?? null;
     };
 
-    const onMove = (e: PointerEvent) => {
-      // only while the finger/button is actually held down (a slide, not a hover)
-      if (e.buttons !== 1) return;
-      setHover(keyUnder(e.clientX, e.clientY));
+    const cleanup = () => {
+      document.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('touchend', onTouchEnd);
+      document.removeEventListener('touchcancel', onTouchCancel);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
     };
 
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+    // fire the option the finger lifted on; swallow the trailing ghost click so
+    // the option doesn't also trigger via its onClick (double-fire)
+    const finish = () => {
       const key = current;
       setHover(null);
-      if (!key) return; // released on empty space → stay open for tap mode
-      // a touch release can synthesize a ghost click — swallow the next one so
-      // the option doesn't also fire via onClick (double-trigger)
+      if (!key) return; // released on empty space → leave open for tap mode
       const killClick = (ev: Event) => {
         ev.preventDefault();
         ev.stopPropagation();
@@ -114,14 +114,36 @@ export function MessageActions({
       fireRef.current(key);
     };
 
-    document.addEventListener('touchmove', preventScroll, { passive: false });
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    return () => {
-      document.removeEventListener('touchmove', preventScroll);
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault(); // no background scroll + keeps the touch alive
+      const t = e.touches[0];
+      if (t) setHover(keyUnder(t.clientX, t.clientY));
     };
+    const onTouchEnd = () => {
+      cleanup();
+      finish();
+    };
+    const onTouchCancel = () => {
+      cleanup();
+      setHover(null);
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return; // touch handled above
+      if (e.buttons !== 1) return; // only while the button is held (a drag)
+      setHover(keyUnder(e.clientX, e.clientY));
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
+      cleanup();
+      finish();
+    };
+
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('touchend', onTouchEnd);
+    document.addEventListener('touchcancel', onTouchCancel);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return cleanup;
   }, [message]);
 
   const myReaction = message?.reactions?.me;
