@@ -47,6 +47,7 @@ import {
   uploadProfile,
 } from '@/lib/message-api';
 import { mockMessages } from '@/lib/mock-data';
+import { loadReactions, persistReactions } from '@/lib/reactions';
 import {
   DM_CHANNEL_ID,
   type AcceptedNotice,
@@ -131,6 +132,8 @@ interface ChatStore {
   lastSeen: Record<string, number>;
   /** epoch ms the peer has read the DM up to (drives our 'read' receipts) */
   peerReadAt: number;
+  /** the 6 customizable quick reactions; slot 0 is the double-tap default */
+  quickReactions: string[];
   /** pending collab invites the peer sent us, surfaced as notifications */
   invites: CollabInvite[];
   /** notices that the peer accepted an invite *we* sent */
@@ -177,6 +180,8 @@ interface ChatStore {
   /** apply the peer's read mark — flips our delivered DM sends to 'read' */
   applyPeerReadAt: (at: number) => void;
 
+  /** replace the quick-reaction set (persists; slot 0 = double-tap default) */
+  setQuickReactions: (reactions: string[]) => void;
   setMyProfile: (profile: Profile) => void;
   setPeerProfile: (profile: Profile) => void;
   /** display name for a sender, with mock fallbacks */
@@ -204,6 +209,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   peerProfile: readJson<Profile>(PEER_PROFILE_KEY),
   lastSeen: readJson<Record<string, number>>(LAST_SEEN_KEY) ?? {},
   peerReadAt: readNum(PEER_READ_KEY),
+  quickReactions: loadReactions(),
   invites: [],
   acceptances: [],
 
@@ -571,6 +577,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   setPeerTyping: (peerTyping) => set({ peerTyping }),
+
+  setQuickReactions: (reactions) => {
+    persistReactions(reactions);
+    set({ quickReactions: reactions });
+  },
 
   setMyProfile: (profile) => {
     localStorage.setItem(MY_PROFILE_KEY, JSON.stringify(profile));

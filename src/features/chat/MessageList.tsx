@@ -50,6 +50,8 @@ interface MessageListProps {
   onLongPress: (message: Message) => void;
   onOpenImage: (message: Message) => void;
   onRetry?: (message: Message) => void;
+  /** double-tap a message to toggle the default reaction */
+  onDoubleTapReact?: (message: Message) => void;
   /** shown centered when the channel has no messages yet */
   emptyState?: React.ReactNode;
 }
@@ -61,6 +63,7 @@ export function MessageList({
   onLongPress,
   onOpenImage,
   onRetry,
+  onDoubleTapReact,
   emptyState,
 }: MessageListProps) {
   const displayName = useChatStore((s) => s.displayName);
@@ -163,6 +166,7 @@ export function MessageList({
                 onOpenImage={onOpenImage}
                 onQuoteClick={jumpTo}
                 onRetry={onRetry}
+                onDoubleTapReact={onDoubleTapReact}
               />
             </div>
           );

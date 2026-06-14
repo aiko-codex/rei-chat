@@ -146,6 +146,13 @@ export function ChatScreen({
         setActionTarget(null);
     };
 
+    // double-tap a message → toggle the default (first) quick reaction
+    const toggleDefaultReaction = (message: Message) => {
+        const def = useChatStore.getState().quickReactions[0];
+        const current = message.reactions?.[currentUserId];
+        setReaction(message.id, currentUserId, current === def ? undefined : def);
+    };
+
     // E2E means the server can never restore deleted content — both removal
     // paths get a 5s undo window instead of an irreversible single tap
     const deleteForMe = () => {
@@ -242,6 +249,7 @@ export function ChatScreen({
                 onLongPress={setActionTarget}
                 onOpenImage={setLightboxTarget}
                 onRetry={retry}
+                onDoubleTapReact={isDm ? toggleDefaultReaction : undefined}
                 emptyState={
                     isDm ? (
                         <div className='flex max-w-xs flex-col items-center gap-3 text-center'>

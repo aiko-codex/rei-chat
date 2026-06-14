@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Copy, Reply, Trash2, Undo2 } from 'lucide-react';
+import { Copy, Plus, Reply, Trash2, Undo2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useChatStore } from '@/store/chat-store';
+import { ReactionEmojiSheet } from './ReactionEmojiSheet';
 import type { Message } from '@/lib/types';
-
-export const QUICK_REACTIONS = ['🤍', '🖤', '😂', '😢', '😡', '😆'];
 
 interface ActionRowProps {
   icon: React.ReactNode;
@@ -56,14 +56,23 @@ export function MessageActions({
   onDeleteForMe,
   onUnsend,
 }: MessageActionsProps) {
+  const quickReactions = useChatStore((s) => s.quickReactions);
   // which option the finger is currently over during a slide gesture
   const [hovered, setHovered] = useState<string | null>(null);
+  // the "react with any emoji" / customise sheet
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // each fresh open resets the picker
+  useEffect(() => {
+    if (!message) setPickerOpen(false);
+  }, [message]);
 
   // resolve a slide key → its action; kept in a ref so the gesture listeners
   // (attached once per open) always see the latest handlers
   const fireRef = useRef<(key: string) => void>(() => {});
   fireRef.current = (key: string) => {
     if (key.startsWith('react:')) onReact(key.slice('react:'.length));
+    else if (key === 'more') setPickerOpen(true);
     else if (key === 'reply') onReply();
     else if (key === 'copy') onCopy();
     else if (key === 'delete') onDeleteForMe();
@@ -76,7 +85,9 @@ export function MessageActions({
   // preventDefault them, which also kills background scroll AND stops the
   // browser from pan-cancelling the pointer); MOUSE/pen uses pointer events.
   useEffect(() => {
-    if (!message) return;
+    // no slide gesture / scroll-lock while the emoji sheet is open (it needs
+    // to scroll); the slide only matters during the initial long-press anyway
+    if (!message || pickerOpen) return;
     let current: string | null = null;
     const setHover = (k: string | null) => {
       if (k === current) return;
@@ -144,13 +155,14 @@ export function MessageActions({
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
     return cleanup;
-  }, [message]);
+  }, [message, pickerOpen]);
 
   const myReaction = message?.reactions?.me;
 
   return (
+    <>
     <AnimatePresence>
-      {message && (
+      {message && !pickerOpen && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -169,13 +181,13 @@ export function MessageActions({
             onClick={(e) => e.stopPropagation()}
             data-testid="reaction-bar"
           >
-            {QUICK_REACTIONS.map((emoji, i) => {
+            {quickReactions.map((emoji, i) => {
               const key = `react:${emoji}`;
               const selected = myReaction === emoji;
               const isHovered = hovered === key;
               return (
                 <motion.button
-                  key={emoji}
+                  key={i}
                   onClick={() => onReact(emoji)}
                   aria-label={`React ${emoji}`}
                   aria-pressed={selected}
@@ -194,6 +206,22 @@ export function MessageActions({
                 </motion.button>
               );
             })}
+            <motion.button
+              onClick={() => setPickerOpen(true)}
+              aria-label="More reactions"
+              data-testid="react-more"
+              data-slide-key="more"
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: hovered === 'more' ? 1.2 : 1 }}
+              transition={{ delay: hovered === 'more' ? 0 : 0.03 * quickReactions.length, type: 'spring', stiffness: 600, damping: 22 }}
+              whileTap={{ scale: 0.85 }}
+              className={cn(
+                'flex size-10 cursor-pointer items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted/70 [&_svg]:size-5',
+                hovered === 'more' && 'bg-primary/15 text-primary',
+              )}
+            >
+              <Plus />
+            </motion.button>
           </motion.div>
 
           {/* the message being acted on */}
@@ -268,5 +296,11 @@ export function MessageActions({
         </motion.div>
       )}
     </AnimatePresence>
+    <ReactionEmojiSheet
+      open={pickerOpen && !!message}
+      onClose={() => setPickerOpen(false)}
+      onReact={onReact}
+    />
+    </>
   );
 }

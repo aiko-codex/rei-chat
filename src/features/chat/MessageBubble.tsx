@@ -228,6 +228,8 @@ interface MessageBubbleProps {
   onQuoteClick?: (messageId: string) => void;
   /** resend a message whose server upload failed */
   onRetry?: (message: Message) => void;
+  /** double-tap to toggle the default reaction */
+  onDoubleTapReact?: (message: Message) => void;
 }
 
 export function MessageBubble({
@@ -241,9 +243,23 @@ export function MessageBubble({
   onOpenImage,
   onQuoteClick,
   onRetry,
+  onDoubleTapReact,
 }: MessageBubbleProps) {
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
+  const lastTap = useRef(0);
+
+  const handleTap = () => {
+    if (longPressFired.current || !onDoubleTapReact) return;
+    const now = Date.now();
+    if (now - lastTap.current < 280) {
+      lastTap.current = 0;
+      navigator.vibrate?.(10);
+      onDoubleTapReact(message);
+    } else {
+      lastTap.current = now;
+    }
+  };
 
   // live upload progress (0..1) while this media message is streaming to the server
   const uploadProgress = useChatStore((s) => s.transfers[message.id]);
@@ -298,6 +314,7 @@ export function MessageBubble({
       onPointerUp={cancelPress}
       onPointerMove={cancelPress}
       onPointerLeave={cancelPress}
+      onClick={handleTap}
       onClickCapture={(e) => {
         // a long press already opened the actions overlay — swallow the trailing click
         if (longPressFired.current) {
