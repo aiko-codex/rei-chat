@@ -5,26 +5,26 @@
 
 @custom-variant dark (&:is(.dark *));
 
-html {
-  height: 100%;
-}
-
-/* Lock the document so the on-screen keyboard can never scroll the page itself.
-   In an installed PWA, focusing the bottom composer makes the browser scroll
-   #root up to reveal the input — which drags the fixed header off the top.
-   Pinning the body (fixed, no overflow) means only the inner message list
-   scrolls, so the header stays put (Instagram-style). */
+html,
 body {
-  position: fixed;
-  inset: 0;
+  height: 100%;
   overflow: hidden;
 }
 
+/* Pin the app to the *visible* viewport. In an installed PWA, focusing the
+   bottom composer makes iOS scroll the page up to reveal the input — dragging
+   the header off the top. By fixing #root to the visualViewport's height AND
+   top offset (both driven from main.tsx), #root always exactly covers the area
+   above the keyboard: header stays pinned at the top, only the message list
+   scrolls, and the composer sits just above the keyboard (Instagram-style).
+   Falls back to a normal full-height block before the script runs. */
 #root {
-  /* --app-h tracks the *visible* viewport (driven from the visualViewport API
-     in main.tsx), so when the keyboard opens the flex column shrinks and the
-     composer rises to sit just above it. Falls back to 100% pre-script. */
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--vv-top, 0);
   height: var(--app-h, 100%);
+  overflow: hidden;
 }
 
 body {

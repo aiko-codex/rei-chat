@@ -46,8 +46,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
             "!px-3.5 !py-2.5 !text-[13px]",
           title: "!text-[13px] !font-medium",
           description: "!text-xs !text-muted-foreground",
-          actionButton: "!h-7 !px-2.5 !text-xs !rounded-lg",
-          cancelButton: "!h-7 !px-2.5 !text-xs !rounded-lg",
+          actionButton:
+            "!h-7 !px-2.5 !text-xs !rounded-lg !bg-primary !text-primary-foreground !font-medium",
+          cancelButton:
+            "!h-7 !px-2.5 !text-xs !rounded-lg !bg-muted !text-muted-foreground",
           icon: "!size-4",
           closeButton:
             "!border-foreground/10 !bg-background/80 !backdrop-blur-md !text-foreground",

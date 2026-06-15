@@ -14,8 +14,13 @@ export function watchVisualViewport(): void {
     const vv = window.visualViewport;
     if (!vv) return; // very old browsers: CSS falls back to 100%
 
+    const root = document.documentElement;
     const apply = () => {
-        document.documentElement.style.setProperty('--app-h', `${vv.height}px`);
+        // height = visible area above the keyboard; offsetTop = how far iOS has
+        // scrolled the page up. Tracking both keeps #root exactly over the
+        // visible viewport, so the header never scrolls away.
+        root.style.setProperty('--app-h', `${vv.height}px`);
+        root.style.setProperty('--vv-top', `${vv.offsetTop}px`);
     };
 
     apply();
