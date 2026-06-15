@@ -11,6 +11,7 @@ import {
   Moon,
   Palette,
   QrCode,
+  RefreshCw,
   ShieldCheck,
   Smartphone,
   Sun,
@@ -30,6 +31,7 @@ import { THEMES, getTheme, setTheme, type ThemeId } from '@/lib/theme';
 import { ACCENTS, getAccentId, setAccent } from '@/lib/accent';
 import { cn } from '@/lib/utils';
 import { clearServerCiphertext, fetchVersions, type DeviceVersion } from '@/lib/message-api';
+import { forceRefresh } from '@/lib/pwa-update';
 import { ChangePINDialog } from './ChangePINDialog';
 import { ManageDevicesDialog } from './ManageDevicesDialog';
 import { EditProfileDialog } from './EditProfileDialog';
@@ -298,6 +300,11 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
     }
   };
 
+  const handleForceRefresh = () => {
+    toast.info('Fetching the latest version…');
+    void forceRefresh(); // clears SW + caches, keeps your data, then reloads
+  };
+
   const handleRevokePush = () => {
     // TODO: implement when push notification system is set up
     toast.info('Push subscription revocation not yet implemented');
@@ -381,6 +388,13 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
           label="Notifications"
           onClick={() => setNotificationsOpen(true)}
           testId="settings-notifications"
+        />
+        <Row
+          icon={<RefreshCw className="size-4" />}
+          label="Check for updates"
+          hint="Clear cache & reload the latest version (keeps your chats)"
+          onClick={handleForceRefresh}
+          testId="settings-force-refresh"
         />
 
         <AnimatePresence>

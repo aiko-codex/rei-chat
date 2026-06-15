@@ -13,6 +13,31 @@ import { reportVersion } from './message-api';
 
 let started = false;
 
+/**
+ * Hard-refresh onto the latest deployed code: unregister the service worker and
+ * delete all of its caches, then reload from the network. This is the manual
+ * escape hatch when the auto update prompt doesn't show or a device is stuck on
+ * a stale build. Deliberately does NOT touch IndexedDB or localStorage — the
+ * conversation cache, pairing, keys, profile, and settings all survive.
+ */
+export async function forceRefresh(): Promise<void> {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch {
+    // best effort — reload regardless so the user isn't left stuck
+  } finally {
+    // SW gone + caches cleared → this reload pulls fresh assets from the server
+    window.location.reload();
+  }
+}
+
 export function setupPWAUpdates(): void {
   if (started) return;
   started = true;

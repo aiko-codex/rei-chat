@@ -260,7 +260,7 @@ export function MessageList({
             notifyViewedBottom();
           }
         }}
-        className="momentum-scroll h-full overflow-y-auto px-4 py-3"
+        className="h-full overflow-y-auto px-4 py-3"
         data-testid="message-list"
       >
       {messages.length === 0 && !peerTyping && emptyState && (
