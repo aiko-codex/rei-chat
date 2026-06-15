@@ -15,15 +15,19 @@ declare const self: ServiceWorkerGlobalScope & typeof globalThis;
 // injected at build time by vite-plugin-pwa
 precacheAndRoute(self.__WB_MANIFEST);
 
-// take control ASAP so the new SW (and its push handler) is live after update
-self.addEventListener('install', () => {
-    void self.skipWaiting();
-});
+// NOTE: do NOT call skipWaiting() on install. We're in vite-plugin-pwa
+// `prompt` mode — a freshly deployed SW must *wait* (stay installed but not
+// activate) so `virtual:pwa-register` fires `onNeedRefresh`, which is what shows
+// the "Update available · Reload" toast. Skipping the wait here makes every
+// deploy activate silently → the toast never appears (regression from when this
+// custom SW was added). The waiting SW activates only when the user taps
+// "Reload", which posts the SKIP_WAITING message handled below.
 self.addEventListener('activate', (event) => {
     event.waitUntil(self.clients.claim());
 });
 
-// the update toast's "Reload" posts this (virtual:pwa-register, prompt mode)
+// the update toast's "Reload" posts this (virtual:pwa-register, prompt mode):
+// activate the waiting SW now, then the page reloads onto the new build
 self.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'SKIP_WAITING') {
         void self.skipWaiting();

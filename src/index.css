@@ -37,10 +37,14 @@ body {
   overscroll-behavior: none;
 }
 
-/* iOS-style momentum/deceleration on scrollable regions (chat list, etc.) and
-   contain the overscroll so the chrome never rubber-bands behind it */
+/* Contain overscroll so the chrome never rubber-bands behind a scroll region.
+   NOTE: do NOT add `-webkit-overflow-scrolling: touch` here. iOS 13+ already
+   does momentum scrolling by default, and that legacy property, when set on an
+   inner scroller inside the `position: fixed` #root, makes iOS scroll the fixed
+   ancestor on input focus — pushing the header off-screen (the exact bug
+   viewport.ts/#root were built to prevent). It regressed the header pin once;
+   keep it out. */
 .momentum-scroll {
-  -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
 
