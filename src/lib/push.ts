@@ -108,6 +108,33 @@ export async function disablePush(): Promise<void> {
     }
 }
 
+export interface PushTestResult {
+    ok: boolean;
+    sent: number;
+    reason?: string;
+    codes?: number[];
+}
+
+/**
+ * Self-test: ask the server to push to THIS device. If the notification
+ * appears, the whole chain works. Returns the server's report (ok = a push
+ * service accepted it for delivery).
+ */
+export async function sendTestPush(): Promise<PushTestResult> {
+    if (!SIGNAL_URL) return { ok: false, sent: 0, reason: 'no server configured' };
+    try {
+        const res = await fetch(`${SIGNAL_URL}?action=push_test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ room: getRoomId(), deviceId: getDeviceId() }),
+        });
+        if (!res.ok) return { ok: false, sent: 0, reason: `server ${res.status}` };
+        return (await res.json()) as PushTestResult;
+    } catch {
+        return { ok: false, sent: 0, reason: 'network error' };
+    }
+}
+
 /**
  * Wake the other device (used when starting a call: WebRTC needs both peers
  * online, so we ping to foreground the callee's PWA). Best effort.

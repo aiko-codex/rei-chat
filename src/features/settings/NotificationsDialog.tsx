@@ -6,12 +6,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import {
   disablePush,
   enablePush,
   isPushEnabled,
   notificationPermission,
   pushSupported,
+  sendTestPush,
 } from '@/lib/push';
 
 interface NotificationsDialogProps {
@@ -55,6 +57,24 @@ export function NotificationsDialog({
     await disablePush();
     setBusy(false);
     setEnabled(false);
+  };
+
+  const test = async () => {
+    setBusy(true);
+    setError(null);
+    const result = await sendTestPush();
+    setBusy(false);
+    if (result.ok) {
+      toast('Test sent — you should see a notification in a moment 🔔');
+    } else {
+      setError(
+        result.reason === 'no subscription for this device'
+          ? 'No subscription found. Toggle notifications off and on again.'
+          : result.reason === 'server push not configured'
+            ? 'Server push isn’t configured (VAPID keys missing in secrets.php).'
+            : `Test failed (${result.reason ?? 'unknown'}).`,
+      );
+    }
   };
 
   return (
@@ -108,6 +128,18 @@ export function NotificationsDialog({
               </Button>
             )}
           </div>
+
+          {enabled && (
+            <Button
+              variant="outline"
+              onClick={test}
+              disabled={busy}
+              className="w-full cursor-pointer"
+              data-testid="notifications-test"
+            >
+              {busy ? 'Sending…' : 'Send test notification'}
+            </Button>
+          )}
 
           <p className="text-xs text-muted-foreground">
             Notifications only say “New message” — never the content. Your
