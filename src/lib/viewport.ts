@@ -77,23 +77,21 @@ export function watchVisualViewport(): void {
 
     const root = document.documentElement;
     const apply = () => {
-        // Only follow the visual viewport while the on-screen keyboard is
-        // actually open. Otherwise mobile browsers fire `scroll` on every
-        // page scroll (address-bar hide/show, rubber-band) with a transient
-        // non-zero offsetTop — which would yank the whole fixed #root upward,
-        // making every screen appear to "jump up" while scrolling.
-        const keyboardOpen = window.innerHeight - vv.height > 150;
-        if (keyboardOpen) {
-            // height = visible area above the keyboard; offsetTop = how far iOS
-            // has scrolled the page up. Tracking both keeps #root exactly over
-            // the visible viewport, so the header never scrolls away.
-            root.style.setProperty('--app-h', `${vv.height}px`);
-            root.style.setProperty('--vv-top', `${vv.offsetTop}px`);
-        } else {
-            // keyboard closed → pin #root to the full layout viewport
-            root.style.setProperty('--app-h', '100%');
-            root.style.setProperty('--vv-top', '0px');
-        }
+        // Always size #root to the *visible* viewport — height = the area above
+        // the keyboard, top = how far the visual viewport is offset. This keeps
+        // the header pinned at the top AND the composer just above the keyboard.
+        //
+        // The old code gated this behind a `innerHeight - vv.height > 150`
+        // "keyboard open" heuristic to avoid following transient page-scroll
+        // offsets — but on some iPhones the keyboard doesn't trip that threshold
+        // (innerHeight tracks the visual viewport), so #root never shrank and
+        // the composer ended up hidden under the keyboard. Now that <body> is
+        // `position: fixed` (index.css), the document can't page-scroll at all,
+        // so there are no transient offsets to guard against — always applying
+        // is both correct and safe. Inner scroll (message list) doesn't fire
+        // visualViewport events, so it's unaffected.
+        root.style.setProperty('--app-h', `${vv.height}px`);
+        root.style.setProperty('--vv-top', `${vv.offsetTop}px`);
     };
 
     apply();
