@@ -16,11 +16,23 @@ export function watchVisualViewport(): void {
 
     const root = document.documentElement;
     const apply = () => {
-        // height = visible area above the keyboard; offsetTop = how far iOS has
-        // scrolled the page up. Tracking both keeps #root exactly over the
-        // visible viewport, so the header never scrolls away.
-        root.style.setProperty('--app-h', `${vv.height}px`);
-        root.style.setProperty('--vv-top', `${vv.offsetTop}px`);
+        // Only follow the visual viewport while the on-screen keyboard is
+        // actually open. Otherwise mobile browsers fire `scroll` on every
+        // page scroll (address-bar hide/show, rubber-band) with a transient
+        // non-zero offsetTop — which would yank the whole fixed #root upward,
+        // making every screen appear to "jump up" while scrolling.
+        const keyboardOpen = window.innerHeight - vv.height > 150;
+        if (keyboardOpen) {
+            // height = visible area above the keyboard; offsetTop = how far iOS
+            // has scrolled the page up. Tracking both keeps #root exactly over
+            // the visible viewport, so the header never scrolls away.
+            root.style.setProperty('--app-h', `${vv.height}px`);
+            root.style.setProperty('--vv-top', `${vv.offsetTop}px`);
+        } else {
+            // keyboard closed → pin #root to the full layout viewport
+            root.style.setProperty('--app-h', '100%');
+            root.style.setProperty('--vv-top', '0px');
+        }
     };
 
     apply();
