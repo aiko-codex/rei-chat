@@ -8,7 +8,13 @@
 html,
 body,
 #root {
-  height: 100%;
+  /* --app-h is driven from the visualViewport API (see main.tsx) so the app
+     tracks the *visible* area when the on-screen keyboard opens. iOS Safari
+     ignores the viewport `interactive-widget` hint, so without this the
+     installed PWA scrolls the whole #root up behind the keyboard, dragging the
+     header off the top. Falls back to 100% before the script runs / if the API
+     is unavailable. */
+  height: var(--app-h, 100%);
 }
 
 body {
