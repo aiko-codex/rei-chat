@@ -1,6 +1,7 @@
-import { ChevronLeft, Hash, Headphones, ListTodo, Phone, Video, Settings } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Hash, Headphones, ListTodo, Phone, Video, Settings } from 'lucide-react';
 import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface ChatHeaderProps {
   title: string;
@@ -10,6 +11,8 @@ interface ChatHeaderProps {
   /** avatar image (data URL); falls back to color + initial */
   avatarUrl?: string;
   online?: boolean;
+  /** connection state for the status dot in the subtitle (DM only) */
+  connState?: 'online' | 'connecting' | 'offline';
   /** personal text channel: # icon, no call buttons */
   isChannel?: boolean;
   /** todo channel: checklist icon instead of # */
@@ -29,6 +32,7 @@ export function ChatHeader({
   avatarColor,
   avatarUrl,
   online,
+  connState,
   isChannel,
   isTodo,
   onBack,
@@ -77,11 +81,28 @@ export function ChatHeader({
           </Avatar>
         )}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold" data-testid="peer-name">
-            {title}
+          <span className="flex items-center gap-1">
+            <span className="truncate text-[15px] font-semibold" data-testid="peer-name">
+              {title}
+            </span>
+            {/* chevron hints the name/avatar is tappable → conversation profile */}
+            {onOpenProfile && (
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" data-testid="profile-chevron" />
+            )}
           </span>
           {subtitle && (
-            <span className="block text-xs text-muted-foreground" data-testid="peer-status">
+            <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground" data-testid="peer-status">
+              {connState && (
+                <span
+                  className={cn(
+                    'size-1.5 shrink-0 rounded-full',
+                    connState === 'online' && 'bg-emerald-500',
+                    connState === 'connecting' && 'animate-pulse bg-amber-500',
+                    connState === 'offline' && 'bg-muted-foreground/40',
+                  )}
+                  data-testid="conn-dot"
+                />
+              )}
               {subtitle}
             </span>
           )}

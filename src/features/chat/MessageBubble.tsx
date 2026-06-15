@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { motion } from 'motion/react';
-import { Check, CheckCheck, CircleAlert, FileIcon, ImageIcon, Mic, Pause, Play, Video } from 'lucide-react';
+import { motion, useMotionValue, useTransform } from 'motion/react';
+import { Check, CheckCheck, CircleAlert, FileIcon, ImageIcon, Mic, Pause, Play, Reply, Video } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
 import { useChatStore } from '@/store/chat-store';
@@ -232,7 +232,12 @@ interface MessageBubbleProps {
   onRetry?: (message: Message) => void;
   /** double-tap to toggle the default reaction */
   onDoubleTapReact?: (message: Message) => void;
+  /** swipe right on the bubble to quick-reply (iMessage convention) */
+  onSwipeReply?: (message: Message) => void;
 }
+
+/** drag distance (px) past which releasing fires a reply */
+const SWIPE_REPLY_PX = 48;
 
 export function MessageBubble({
   message,
@@ -246,11 +251,19 @@ export function MessageBubble({
   onQuoteClick,
   onRetry,
   onDoubleTapReact,
+  onSwipeReply,
 }: MessageBubbleProps) {
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
   const lastTap = useRef(0);
   const displayName = useChatStore((s) => s.displayName);
+
+  // swipe-to-reply: x is driven by the horizontal drag; the reply glyph fades
+  // and scales in as the bubble slides right, and a release past the threshold
+  // fires the quick-reply.
+  const x = useMotionValue(0);
+  const replyOpacity = useTransform(x, [0, SWIPE_REPLY_PX], [0, 1]);
+  const replyScale = useTransform(x, [0, SWIPE_REPLY_PX], [0.5, 1]);
 
   const handleTap = () => {
     if (longPressFired.current || !onDoubleTapReact) return;
@@ -313,11 +326,13 @@ export function MessageBubble({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.18, ease: 'easeOut' }}
+      // send/receive: spring scale-and-fade in (not a linear slide) — gives the
+      // sent bubble a tactile "pop" as it lands
+      initial={{ opacity: 0, scale: 0.85, y: 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 520, damping: 30, mass: 0.7 }}
       className={cn(
-        'flex w-full select-none [-webkit-touch-callout:none]',
+        'relative flex w-full select-none [-webkit-touch-callout:none]',
         isMine ? 'justify-end' : 'justify-start',
         reactions.length > 0 && 'mb-3',
       )}
@@ -341,7 +356,30 @@ export function MessageBubble({
         onLongPress(message);
       }}
     >
-      <div className={cn('flex max-w-[82%] flex-col gap-1', isMine ? 'items-end' : 'items-start')}>
+      {/* reply affordance revealed as the bubble is swiped right */}
+      {onSwipeReply && (
+        <motion.span
+          style={{ opacity: replyOpacity, scale: replyScale }}
+          className="pointer-events-none absolute left-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-muted text-muted-foreground [&_svg]:size-4"
+          aria-hidden
+        >
+          <Reply />
+        </motion.span>
+      )}
+      <motion.div
+        style={{ x }}
+        drag={onSwipeReply ? 'x' : false}
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={{ top: 0, bottom: 0, left: 0, right: 0.6 }}
+        dragSnapToOrigin
+        onDragEnd={(_, info) => {
+          if (onSwipeReply && info.offset.x > SWIPE_REPLY_PX) {
+            navigator.vibrate?.(12);
+            onSwipeReply(message);
+          }
+        }}
+        className={cn('flex max-w-[82%] flex-col gap-1', isMine ? 'items-end' : 'items-start')}
+      >
         {replyTo && (
           // minimal Instagram-style quote: a tiny "replied" label + a faint
           // pill of the original, above the bubble (tap to jump to it)
@@ -368,7 +406,7 @@ export function MessageBubble({
           plainMedia
             ? 'rounded-2xl'
             : [
-                'rounded-2xl px-3.5 py-2',
+                'rounded-2xl px-4 py-2.5',
                 isMine ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
                 isGroupEnd && (isMine ? 'rounded-br-md' : 'rounded-bl-md'),
               ],
@@ -470,7 +508,7 @@ export function MessageBubble({
             {statusWord}
           </span>
         )}
-      </div>
+      </motion.div>
     </motion.div>
   );
 }

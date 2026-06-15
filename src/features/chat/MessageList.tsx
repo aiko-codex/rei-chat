@@ -3,7 +3,33 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { useChatStore } from '@/store/chat-store';
+import { cn } from '@/lib/utils';
 import type { Message, UserId } from '@/lib/types';
+
+/** skeleton placeholder bubbles shown while older messages page in (pulse, not
+ *  a spinner — feels like content arriving rather than a stall) */
+function LoadingOlderSkeleton() {
+  const rows = [
+    { mine: false, w: 'w-40' },
+    { mine: true, w: 'w-28' },
+    { mine: false, w: 'w-52' },
+  ];
+  return (
+    <div className="flex flex-col gap-2 py-2" data-testid="loading-older" aria-label="Loading earlier messages">
+      {rows.map((r, i) => (
+        <div key={i} className={cn('flex w-full', r.mine ? 'justify-end' : 'justify-start')}>
+          <div
+            className={cn(
+              'h-9 animate-pulse rounded-2xl bg-muted',
+              r.w,
+              r.mine ? 'rounded-br-md' : 'rounded-bl-md',
+            )}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** how close to the bottom (px) still counts as "reading the latest" */
 const NEAR_BOTTOM_PX = 120;
@@ -57,6 +83,8 @@ interface MessageListProps {
   onRetry?: (message: Message) => void;
   /** double-tap a message to toggle the default reaction */
   onDoubleTapReact?: (message: Message) => void;
+  /** swipe a message right to quick-reply */
+  onSwipeReply?: (message: Message) => void;
   /** fired when the user is genuinely viewing the latest message (at the bottom) */
   onViewedBottom?: () => void;
   /** shown centered when the channel has no messages yet */
@@ -77,6 +105,7 @@ export function MessageList({
   onOpenImage,
   onRetry,
   onDoubleTapReact,
+  onSwipeReply,
   onViewedBottom,
   emptyState,
   backgroundStyle,
@@ -231,7 +260,7 @@ export function MessageList({
             notifyViewedBottom();
           }
         }}
-        className="h-full overflow-y-auto px-4 py-3"
+        className="momentum-scroll h-full overflow-y-auto px-4 py-3"
         data-testid="message-list"
       >
       {messages.length === 0 && !peerTyping && emptyState && (
@@ -240,11 +269,7 @@ export function MessageList({
         </div>
       )}
       <div className="flex flex-col gap-1">
-        {startIndex > 0 && (
-          <div className="flex justify-center py-2 text-xs text-muted-foreground" data-testid="loading-older">
-            Loading earlier messages…
-          </div>
-        )}
+        {startIndex > 0 && <LoadingOlderSkeleton />}
         {windowed.map((msg) => {
           // grouping/day-labels resolve against the full array, not the window,
           // so the boundary row keeps the correct header + tail spacing
@@ -283,6 +308,7 @@ export function MessageList({
                 onQuoteClick={jumpTo}
                 onRetry={onRetry}
                 onDoubleTapReact={onDoubleTapReact}
+                onSwipeReply={onSwipeReply}
               />
             </div>
           );

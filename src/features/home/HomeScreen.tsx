@@ -199,7 +199,7 @@ export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications 
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="momentum-scroll flex-1 overflow-y-auto">
         {/* the DM */}
         <motion.button
           initial={{ opacity: 0, y: 6 }}
@@ -221,8 +221,8 @@ export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications 
             )}
           </Avatar>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{peerName}</p>
-            <p className="truncate text-xs text-muted-foreground">
+            <p className="truncate text-[17px] font-semibold">{peerName}</p>
+            <p className="truncate text-[13px] text-muted-foreground">
               {peerTyping ? (
                 <span className="text-primary">typing…</span>
               ) : (
@@ -231,7 +231,7 @@ export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications 
             </p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <span className="text-[11px] text-muted-foreground">{timeOf(dmLast)}</span>
+            <span className="text-[13px] text-muted-foreground">{timeOf(dmLast)}</span>
             {dmUnread > 0 && (
               <span
                 className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
@@ -266,7 +266,7 @@ export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications 
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
-                    <span className="truncate text-sm font-semibold">{channel.name}</span>
+                    <span className="truncate text-[17px] font-semibold">{channel.name}</span>
                     {channel.shared && (
                       <span
                         className="flex items-center text-primary [&_svg]:size-3.5"
@@ -277,11 +277,11 @@ export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications 
                       </span>
                     )}
                   </span>
-                  <span className="block truncate text-xs text-muted-foreground">
+                  <span className="block truncate text-[13px] text-muted-foreground">
                     {channel.kind === 'todo' ? todoPreview(channel.id) : previewOf(last)}
                   </span>
                 </span>
-                <span className="text-[11px] text-muted-foreground">{timeOf(last)}</span>
+                <span className="text-[13px] text-muted-foreground">{timeOf(last)}</span>
               </button>
               <button
                 onClick={() => setMenuChannelId(channel.id)}

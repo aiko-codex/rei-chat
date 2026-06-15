@@ -284,6 +284,13 @@ export function ChatScreen({
                     avatarColor={peerProfile?.color}
                     avatarUrl={peerProfile?.avatar}
                     online={!SIGNAL_URL || peerStatus === 'connected'}
+                    connState={
+                        !SIGNAL_URL || peerStatus === 'connected'
+                            ? 'online'
+                            : peerStatus === 'connecting'
+                              ? 'connecting'
+                              : 'offline'
+                    }
                     subtitle={
                         SIGNAL_URL
                             ? peerStatus === 'connected'
@@ -322,6 +329,10 @@ export function ChatScreen({
                 onOpenImage={setLightboxTarget}
                 onRetry={retry}
                 onDoubleTapReact={isDm ? toggleDefaultReaction : undefined}
+                onSwipeReply={(m) => {
+                    setEditTarget(null);
+                    setReplyTarget(m);
+                }}
                 onViewedBottom={onViewedBottom}
                 backgroundStyle={backgroundStyle}
                 jumpToId={jump?.id}
