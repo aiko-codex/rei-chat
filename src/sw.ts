@@ -52,15 +52,29 @@ self.addEventListener('push', (event) => {
     }
 
     event.waitUntil(
-        self.registration.showNotification(title, {
-            body,
-            tag,
-            // collapse repeats of the same kind into one notification
-            renotify: true,
-            icon: './pwa-192.png',
-            badge: './pwa-192.png',
-            data: { url: './' },
-        } as NotificationOptions),
+        (async () => {
+            // If the app is already open AND focused/visible, the user is right
+            // here — don't fire a notification (it already updates live over
+            // P2P / the sync poll). Only notify when backgrounded or closed.
+            const clients = await self.clients.matchAll({
+                type: 'window',
+                includeUncontrolled: true,
+            });
+            const active = clients.some(
+                (c) => c.visibilityState === 'visible' && c.focused,
+            );
+            if (active) return;
+
+            await self.registration.showNotification(title, {
+                body,
+                tag,
+                // collapse repeats of the same kind into one notification
+                renotify: true,
+                icon: './pwa-192.png',
+                badge: './pwa-192.png',
+                data: { url: './' },
+            } as NotificationOptions);
+        })(),
     );
 });
 

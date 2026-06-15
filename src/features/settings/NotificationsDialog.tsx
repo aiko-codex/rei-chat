@@ -65,7 +65,10 @@ export function NotificationsDialog({
     const result = await sendTestPush();
     setBusy(false);
     if (result.ok) {
-      toast('Test sent — you should see a notification in a moment 🔔');
+      toast('Push delivered ✓ — notifications are working', {
+        description:
+          'The banner only shows when the app is in the background. Background the app and send a test again to see it.',
+      });
     } else {
       setError(
         result.reason === 'no subscription for this device'
