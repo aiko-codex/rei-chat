@@ -15,6 +15,7 @@ import {
   sendCallFrame,
   stopCallTracks,
 } from '@/lib/peer-service';
+import { pushPing } from '@/lib/push';
 
 export type CallType = 'voice' | 'video';
 export type CallState = 'idle' | 'outgoing' | 'incoming' | 'active';
@@ -93,6 +94,9 @@ export const useCallStore = create<CallStore>((set, get) => {
       }
       set({ state: 'outgoing', type, localStream: stream, muted: false, cameraOff: false });
       sendCallFrame({ kind: 'call-offer', callType: type });
+      // wake the callee's device (screen off / app backgrounded) so they see
+      // the incoming call — payload-less, best effort
+      void pushPing();
     },
 
     receiveOffer: (type) => {

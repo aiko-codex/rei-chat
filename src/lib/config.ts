@@ -6,6 +6,13 @@
 /** Live PHP signaling endpoint, e.g. https://example.com/rei-signal/index.php */
 export const SIGNAL_URL: string = import.meta.env.VITE_SIGNAL_URL ?? '';
 
+/**
+ * VAPID public key for Web Push (base64url, uncompressed P-256 point). The
+ * matching private key lives ONLY on the server (secrets.php). Empty = push
+ * disabled (the subscribe flow no-ops).
+ */
+export const VAPID_PUBLIC_KEY: string = import.meta.env.VITE_VAPID_PUBLIC_KEY ?? '';
+
 import { getPairing } from './pairing';
 
 /**

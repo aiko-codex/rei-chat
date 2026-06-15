@@ -6,6 +6,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import {
+  disablePush,
+  enablePush,
+  isPushEnabled,
+  notificationPermission,
+  pushSupported,
+} from '@/lib/push';
 
 interface NotificationsDialogProps {
   open: boolean;
@@ -17,26 +24,37 @@ export function NotificationsDialog({
   onOpenChange,
 }: NotificationsDialogProps) {
   const [enabled, setEnabled] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const supported = pushSupported();
+  const blocked = notificationPermission() === 'denied';
 
   useEffect(() => {
     if (!open) return;
-    if ('Notification' in window) {
-      setEnabled(Notification.permission === 'granted');
-    }
+    void isPushEnabled().then(setEnabled);
   }, [open]);
 
-  const requestPermission = async () => {
-    if (!('Notification' in window)) {
-      alert('Notifications not supported in this browser');
-      return;
+  const enable = async () => {
+    setBusy(true);
+    setError(null);
+    const ok = await enablePush();
+    setBusy(false);
+    if (ok) {
+      setEnabled(true);
+    } else {
+      setError(
+        notificationPermission() === 'denied'
+          ? 'Permission blocked. Enable notifications for this app in your browser/OS settings.'
+          : 'Could not enable notifications. Make sure the app is installed and try again.',
+      );
     }
-    const permission = await Notification.requestPermission();
-    setEnabled(permission === 'granted');
   };
 
-  const disable = () => {
+  const disable = async () => {
+    setBusy(true);
+    await disablePush();
+    setBusy(false);
     setEnabled(false);
-    // TODO: sync with server to revoke subscriptions
   };
 
   return (
@@ -53,34 +71,48 @@ export function NotificationsDialog({
             </p>
             <p className="text-xs text-muted-foreground">
               {enabled
-                ? 'You will receive notifications for new messages and calls'
-                : 'You will not receive notifications'}
+                ? 'This device will be woken for new messages, calls, and invites — even when the app is closed.'
+                : 'You will not be notified when the app is closed.'}
             </p>
           </div>
+
+          {!supported && (
+            <p className="text-xs text-destructive">
+              Push notifications aren’t available here. Install the app to your
+              home screen first (iOS needs 16.4+), and make sure the server is
+              configured.
+            </p>
+          )}
+
+          {error && <p className="text-xs text-destructive">{error}</p>}
 
           <div className="flex gap-2">
             {!enabled ? (
               <Button
-                onClick={requestPermission}
+                onClick={enable}
+                disabled={busy || !supported || blocked}
                 className="w-full cursor-pointer"
                 data-testid="notifications-enable"
               >
-                Enable notifications
+                {busy ? 'Enabling…' : 'Enable notifications'}
               </Button>
             ) : (
               <Button
                 variant="destructive"
                 onClick={disable}
+                disabled={busy}
                 className="w-full cursor-pointer"
                 data-testid="notifications-disable"
               >
-                Disable notifications
+                {busy ? 'Disabling…' : 'Disable notifications'}
               </Button>
             )}
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Note: Notifications require this app to be installed as a PWA on iOS 16.4+.
+            Notifications only say “New message” — never the content. Your
+            messages stay end-to-end encrypted; the app loads them when you
+            open it. Requires installing as a PWA on iOS 16.4+.
           </p>
         </div>
       </DialogContent>

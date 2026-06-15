@@ -24,6 +24,15 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'prompt',
+      // custom SW (src/sw.ts) so we can add a Web Push handler while keeping
+      // the Workbox precache (self.__WB_MANIFEST is injected into it)
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
+      injectManifest: {
+        // app bundle is ~1.6MB; raise the precache size limit above the default 2MB
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+      },
       includeAssets: ['favicon.svg', 'favicon.ico', 'favicon-16.png', 'favicon-32.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'rei-chat',
