@@ -19,6 +19,8 @@ interface ChatHeaderProps {
   onVideoCall?: () => void;
   onOpenVoiceChannel?: () => void;
   onOpenSettings?: () => void;
+  /** tap the avatar/name to open the conversation profile (DM only) */
+  onOpenProfile?: () => void;
 }
 
 export function ChatHeader({
@@ -34,6 +36,7 @@ export function ChatHeader({
   onVideoCall,
   onOpenVoiceChannel,
   onOpenSettings,
+  onOpenProfile,
 }: ChatHeaderProps) {
   return (
     <header
@@ -50,32 +53,40 @@ export function ChatHeader({
       >
         <ChevronLeft />
       </Button>
-      {isChannel ? (
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted [&_svg]:size-4.5">
-          {isTodo ? <ListTodo /> : <Hash />}
-        </span>
-      ) : (
-        <Avatar size="lg">
-          {avatarUrl && <AvatarImage src={avatarUrl} alt={title} />}
-          <AvatarFallback
-            className="text-white"
-            style={avatarColor ? { backgroundColor: avatarColor } : undefined}
-          >
-            {title[0]?.toUpperCase()}
-          </AvatarFallback>
-          {online && <AvatarBadge className="bg-emerald-500" data-testid="peer-online-badge" />}
-        </Avatar>
-      )}
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold" data-testid="peer-name">
-          {title}
-        </p>
-        {subtitle && (
-          <p className="text-xs text-muted-foreground" data-testid="peer-status">
-            {subtitle}
-          </p>
+      <button
+        type="button"
+        onClick={onOpenProfile}
+        disabled={!onOpenProfile}
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-0.5 text-left disabled:cursor-default enabled:cursor-pointer enabled:hover:bg-muted/60"
+        data-testid="chat-profile-trigger"
+      >
+        {isChannel ? (
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted [&_svg]:size-4.5">
+            {isTodo ? <ListTodo /> : <Hash />}
+          </span>
+        ) : (
+          <Avatar size="lg">
+            {avatarUrl && <AvatarImage src={avatarUrl} alt={title} />}
+            <AvatarFallback
+              className="text-white"
+              style={avatarColor ? { backgroundColor: avatarColor } : undefined}
+            >
+              {title[0]?.toUpperCase()}
+            </AvatarFallback>
+            {online && <AvatarBadge className="bg-emerald-500" data-testid="peer-online-badge" />}
+          </Avatar>
         )}
-      </div>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold" data-testid="peer-name">
+            {title}
+          </span>
+          {subtitle && (
+            <span className="block text-xs text-muted-foreground" data-testid="peer-status">
+              {subtitle}
+            </span>
+          )}
+        </span>
+      </button>
       {onVoiceCall && (
         <Button variant="ghost" size="icon" className="cursor-pointer" onClick={onVoiceCall} aria-label="Voice call" data-testid="voice-call-btn">
           <Phone />

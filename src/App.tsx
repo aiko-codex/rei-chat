@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { CallScreen } from '@/features/call/CallScreen';
 import { ChatScreen } from '@/features/chat/ChatScreen';
+import { ChatDetailsScreen } from '@/features/chat/ChatDetailsScreen';
 import { HomeScreen } from '@/features/home/HomeScreen';
 import { PinScreen } from '@/features/lock/PinScreen';
 import { PairingScreen } from '@/features/pairing/PairingScreen';
@@ -42,6 +43,8 @@ export default function App() {
     const [screen, setScreen] = useState<Screen>(bootScreen);
     const [activeChannel, setActiveChannel] = useState<string>(DM_CHANNEL_ID);
     const [paired, setPaired] = useState(isPaired());
+    // a pending scroll-to-message request (from in-conversation search)
+    const [jump, setJump] = useState<{ id: string; nonce: number } | null>(null);
 
     const myProfile = useChatStore((s) => s.myProfile);
     const setMyProfile = useChatStore((s) => s.setMyProfile);
@@ -248,10 +251,24 @@ export default function App() {
                                 onOpenVoiceChannel={() =>
                                     setScreen('voice-channel')
                                 }
+                                onOpenDetails={() => setScreen('chat-details')}
+                                jump={jump}
                             />
                         </motion.div>
                     )}
                 </AnimatePresence>
+
+                {screen === 'chat-details' && (
+                    <div className='absolute inset-0 z-10 bg-background'>
+                        <ChatDetailsScreen
+                            onBack={() => setScreen('chat')}
+                            onJump={(id) => {
+                                setJump({ id, nonce: Date.now() });
+                                setScreen('chat');
+                            }}
+                        />
+                    </div>
+                )}
 
                 {screen === 'voice-channel' && (
                     <div className='absolute inset-0 z-10 bg-background'>

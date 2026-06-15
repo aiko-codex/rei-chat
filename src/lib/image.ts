@@ -28,6 +28,37 @@ export async function fileToAvatarDataUrl(file: File): Promise<string> {
   return canvas.toDataURL('image/jpeg', AVATAR_QUALITY);
 }
 
+const WALLPAPER_MAX = 1280; // longest edge, px
+const WALLPAPER_QUALITY = 0.7;
+
+/**
+ * Read an image File and return a downscaled jpeg Blob suitable for a chat
+ * wallpaper: scaled so the longest edge is WALLPAPER_MAX, aspect preserved.
+ * Kept modest so the encrypted upload stays small. Rejects non-images.
+ */
+export async function fileToWallpaperBlob(file: File): Promise<Blob> {
+  const bitmap = await loadBitmap(file);
+  const scale = Math.min(1, WALLPAPER_MAX / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('canvas unavailable');
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  if ('close' in bitmap) (bitmap as ImageBitmap).close();
+
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error('encode failed'))),
+      'image/jpeg',
+      WALLPAPER_QUALITY,
+    );
+  });
+}
+
 async function loadBitmap(file: File): Promise<ImageBitmap | HTMLImageElement> {
   // createImageBitmap is fastest where available (handles EXIF orientation too)
   if (typeof createImageBitmap === 'function') {

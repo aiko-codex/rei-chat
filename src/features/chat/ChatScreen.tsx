@@ -23,6 +23,7 @@ import {
 } from '@/lib/peer-service';
 import { currentUserId } from '@/lib/mock-data';
 import { useChatStore } from '@/store/chat-store';
+import { backgroundCss } from '@/lib/chat-theme';
 import { DM_CHANNEL_ID, type MediaAttachment, type Message } from '@/lib/types';
 
 interface ChatScreenProps {
@@ -31,6 +32,10 @@ interface ChatScreenProps {
     onVoiceCall: () => void;
     onVideoCall: () => void;
     onOpenVoiceChannel: () => void;
+    /** open the conversation profile (search / theme / gallery) — DM only */
+    onOpenDetails?: () => void;
+    /** scroll to + highlight a message (e.g. from in-chat search) */
+    jump?: { id: string; nonce: number } | null;
 }
 
 export function ChatScreen({
@@ -39,6 +44,8 @@ export function ChatScreen({
     onVoiceCall,
     onVideoCall,
     onOpenVoiceChannel,
+    onOpenDetails,
+    jump,
 }: ChatScreenProps) {
     const isDm = channelId === DM_CHANNEL_ID;
 
@@ -48,6 +55,8 @@ export function ChatScreen({
     const peerTyping = useChatStore((s) => s.peerTyping);
     const peerProfile = useChatStore((s) => s.peerProfile);
     const channels = useChatStore((s) => s.channels);
+    const chatBg = useChatStore((s) => s.chatBg);
+    const chatBgUrl = useChatStore((s) => s.chatBgUrl);
     const upsert = useChatStore((s) => s.upsert);
     const setReaction = useChatStore((s) => s.setReaction);
     const removeLocal = useChatStore((s) => s.remove);
@@ -86,6 +95,12 @@ export function ChatScreen({
     }, [channelId, isDm, messages, markSeen]);
 
     const imageMessages = messages.filter((m) => m.media?.kind === 'image');
+
+    // the shared chat wallpaper applies to the DM only (personal channels stay
+    // plain). Recomputed per render so a theme toggle re-resolves light/dark.
+    const isDark = document.documentElement.classList.contains('dark');
+    const bgCss = isDm ? backgroundCss(chatBg, isDark, chatBgUrl) : undefined;
+    const backgroundStyle = bgCss ? { background: bgCss } : undefined;
 
     // server store is what reaches her when she's offline — surface failures
     // instead of swallowing them; only downgrade if the P2P ack hasn't
@@ -284,6 +299,7 @@ export function ChatScreen({
                     onVoiceCall={onVoiceCall}
                     onVideoCall={onVideoCall}
                     onOpenVoiceChannel={onOpenVoiceChannel}
+                    onOpenProfile={onOpenDetails}
                 />
             ) : (
                 <ChatHeader
@@ -307,6 +323,9 @@ export function ChatScreen({
                 onRetry={retry}
                 onDoubleTapReact={isDm ? toggleDefaultReaction : undefined}
                 onViewedBottom={onViewedBottom}
+                backgroundStyle={backgroundStyle}
+                jumpToId={jump?.id}
+                jumpNonce={jump?.nonce}
                 emptyState={
                     isDm ? (
                         <div className='flex max-w-xs flex-col items-center gap-3 text-center'>

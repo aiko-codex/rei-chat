@@ -46,12 +46,18 @@ import {
   respondInvite,
   sendInvite,
   uploadLocalItem,
+  uploadMedia,
   uploadMeta,
   uploadProfile,
   type SpaceMember,
 } from '@/lib/message-api';
 import { mockMessages } from '@/lib/mock-data';
 import { loadReactions, persistReactions } from '@/lib/reactions';
+import {
+  getStoredBackground,
+  storeBackground,
+  type ChatBackground,
+} from '@/lib/chat-theme';
 import {
   DM_CHANNEL_ID,
   type AcceptedNotice,
@@ -118,6 +124,23 @@ async function ensureMediaBlob(message: Message): Promise<void> {
     .upsert({ ...message, media: { ...message.media, url: URL.createObjectURL(blob) } });
 }
 
+/**
+ * Rebuild the object URL for a custom chat wallpaper: from the local blob if we
+ * have it, otherwise from the encrypted server backup (so the wallpaper one
+ * device set restores on the other). Returns null for presets / when absent.
+ */
+async function ensureWallpaperUrl(bg: ChatBackground | null): Promise<string | null> {
+  if (!bg || bg.id !== 'custom' || !bg.wid) return null;
+  let blob = await getBlob(bg.wid);
+  if (!blob) {
+    const downloaded = await downloadMedia(bg.wid, bg.mime ?? 'image/jpeg');
+    if (!downloaded) return null;
+    blob = downloaded;
+    await putBlob(bg.wid, blob);
+  }
+  return URL.createObjectURL(blob);
+}
+
 interface ChatStore {
   messages: Message[];
   channels: Channel[];
@@ -146,6 +169,10 @@ interface ChatStore {
   invites: CollabInvite[];
   /** notices that the peer accepted an invite *we* sent */
   acceptances: AcceptedNotice[];
+  /** shared chat wallpaper selection (synced to both devices), null = default */
+  chatBg: ChatBackground | null;
+  /** object URL for a custom wallpaper photo (rebuilt per session), else null */
+  chatBgUrl: string | null;
 
   /** load local cache, derive the key, then pull new ciphertext from the server */
   hydrate: () => Promise<void>;
@@ -183,6 +210,8 @@ interface ChatStore {
   declineInvite: (channelId: string) => void;
   /** rename a channel (edit) — re-publishes if the channel is shared */
   renameChannel: (id: string, name: string) => void;
+  /** set the shared chat wallpaper (preset or custom photo) and publish it */
+  setChatBackground: (bg: ChatBackground, blob?: Blob) => Promise<void>;
   /** publish our read high-water-mark for the DM (call when she's viewing it) */
   markRead: () => void;
   /** apply the peer's read mark — flips our delivered DM sends to 'read' */
@@ -229,6 +258,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   quickReactions: loadReactions(),
   invites: [],
   acceptances: [],
+  chatBg: getStoredBackground(),
+  chatBgUrl: null,
 
   hydrate: async () => {
     if (!persistent || get().hydrated || !isPaired()) return;
@@ -255,6 +286,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     for (const m of cached) {
       if (m.media && !blobs.has(m.id)) void ensureMediaBlob({ ...m, media: { ...m.media, url: '' } });
     }
+    // rebuild the custom wallpaper object URL (object URLs die on reload)
+    void ensureWallpaperUrl(get().chatBg).then((url) => {
+      if (url) set({ chatBgUrl: url });
+    });
     await get().syncHistory();
     void get().syncProfiles();
     void get().syncMeta();
@@ -299,6 +334,25 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         } else if (row.key === 'read' && !row.mine) {
           const at = (row.value as { at?: number } | null)?.at ?? 0;
           if (at > newestPeerRead) newestPeerRead = at;
+        } else if (row.key === 'chat-bg') {
+          // shared wallpaper — last-writer-wins by the embedded timestamp, so a
+          // stale row (or our own echo) never clobbers a newer selection
+          const bg = row.value as ChatBackground | null;
+          const current = get().chatBg;
+          if (bg && typeof bg.at === 'number' && (!current || bg.at > current.at)) {
+            storeBackground(bg);
+            set({ chatBg: bg });
+            const previousUrl = get().chatBgUrl;
+            if (bg.id !== 'custom') {
+              set({ chatBgUrl: null });
+              if (previousUrl) URL.revokeObjectURL(previousUrl);
+            } else {
+              void ensureWallpaperUrl(bg).then((url) => {
+                set({ chatBgUrl: url });
+                if (previousUrl && previousUrl !== url) URL.revokeObjectURL(previousUrl);
+              });
+            }
+          }
         }
       }
       if (newestPeerRead > get().peerReadAt) get().applyPeerReadAt(newestPeerRead);
@@ -477,6 +531,28 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         return next;
       }),
     }));
+  },
+
+  setChatBackground: async (bg, blob) => {
+    storeBackground(bg);
+    const previousUrl = get().chatBgUrl;
+    let url: string | null = null;
+    if (bg.id === 'custom' && bg.wid) {
+      if (blob) {
+        await putBlob(bg.wid, blob);
+        url = URL.createObjectURL(blob);
+      } else {
+        url = await ensureWallpaperUrl(bg);
+      }
+    }
+    set({ chatBg: bg, chatBgUrl: url });
+    if (previousUrl && previousUrl !== url) URL.revokeObjectURL(previousUrl);
+    if (persistent) {
+      // back the photo bytes up (chunked, encrypted) so the peer can restore it
+      if (bg.id === 'custom' && bg.wid && blob) void uploadMedia(bg.wid, blob);
+      // publish the selection on the shared meta store → reaches the other phone
+      void uploadMeta('chat-bg', bg);
+    }
   },
 
   markRead: () => {

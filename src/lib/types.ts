@@ -102,6 +102,7 @@ export type Screen =
   | 'pairing'
   | 'home'
   | 'chat'
+  | 'chat-details'
   | 'call'
   | 'voice-channel'
   | 'settings'

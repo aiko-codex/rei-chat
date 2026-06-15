@@ -61,6 +61,12 @@ interface MessageListProps {
   onViewedBottom?: () => void;
   /** shown centered when the channel has no messages yet */
   emptyState?: React.ReactNode;
+  /** chat wallpaper applied behind the messages (sits under opaque bubbles) */
+  backgroundStyle?: React.CSSProperties;
+  /** id of a message to scroll to + highlight; re-fires when jumpNonce changes */
+  jumpToId?: string | null;
+  /** bump to re-trigger a jump to the same id (e.g. tapping a search result) */
+  jumpNonce?: number;
 }
 
 export function MessageList({
@@ -73,6 +79,9 @@ export function MessageList({
   onDoubleTapReact,
   onViewedBottom,
   emptyState,
+  backgroundStyle,
+  jumpToId,
+  jumpNonce,
 }: MessageListProps) {
   const displayName = useChatStore((s) => s.displayName);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -183,6 +192,15 @@ export function MessageList({
     setTimeout(() => setHighlightId(null), 1200);
   };
 
+  // jump to a message requested from outside (e.g. tapping a search result).
+  // keep the latest jumpTo in a ref so the effect only fires on a new request.
+  const jumpToRef = useRef(jumpTo);
+  jumpToRef.current = jumpTo;
+  useEffect(() => {
+    if (jumpToId) jumpToRef.current(jumpToId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpNonce]);
+
   const byId = new Map(messages.map((m) => [m.id, m]));
   const byIndex = new Map(messages.map((m, i) => [m.id, i]));
 
@@ -201,7 +219,7 @@ export function MessageList({
   }
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="relative min-h-0 flex-1" style={backgroundStyle}>
       <div
         ref={containerRef}
         onScroll={() => {
