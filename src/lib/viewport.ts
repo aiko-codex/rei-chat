@@ -11,6 +11,49 @@
  * platforms that resize, so it's safe to run everywhere.
  */
 export function watchVisualViewport(): void {
+    // Defensive header pin: on iOS, focusing the composer makes WebKit scroll
+    // an ancestor to bring the input into view — even our `overflow:hidden`
+    // shell containers (#root and [data-testid="app-shell"]) are still
+    // focus/script-scrollable on iOS. That drags the sticky header off the top
+    // with no way to scroll it back. Those containers are already sized above
+    // the keyboard (--app-h below), so they never legitimately need to scroll —
+    // snap them back to 0 whenever iOS (or a focus) moves them. The message
+    // list ([data-testid="message-list"]) is a *different* element and is left
+    // free to scroll. Runs even without the visualViewport API.
+    const isShell = (el: EventTarget | null): el is HTMLElement =>
+        el instanceof HTMLElement &&
+        (el.id === 'root' || el.dataset.testid === 'app-shell');
+
+    const snapBack = (el: HTMLElement) => {
+        if (el.scrollTop !== 0) el.scrollTop = 0;
+        if (el.scrollLeft !== 0) el.scrollLeft = 0;
+    };
+
+    // capture phase: `scroll` doesn't bubble, so capture catches it on any
+    // element on the way down; only the shell containers get reset
+    document.addEventListener(
+        'scroll',
+        (e) => {
+            if (isShell(e.target)) snapBack(e.target);
+        },
+        true,
+    );
+
+    // a focus can scroll a container in one shot without a continuous scroll
+    // event — reset both shells after the focus settles (and on later frames)
+    document.addEventListener('focusin', () => {
+        const reset = () => {
+            const root = document.getElementById('root');
+            const shell = document.querySelector<HTMLElement>('[data-testid="app-shell"]');
+            if (root) snapBack(root);
+            if (shell) snapBack(shell);
+        };
+        reset();
+        requestAnimationFrame(reset);
+        setTimeout(reset, 100);
+        setTimeout(reset, 300);
+    });
+
     const vv = window.visualViewport;
     if (!vv) return; // very old browsers: CSS falls back to 100%
 
