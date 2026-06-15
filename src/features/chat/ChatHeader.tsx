@@ -1,6 +1,8 @@
-import { ChevronLeft, ChevronRight, Hash, Headphones, ListTodo, Phone, Video, Settings } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronLeft, ChevronRight, Hash, Headphones, ListTodo, MoreVertical, Phone, Video, Settings } from 'lucide-react';
 import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
 interface ChatHeaderProps {
@@ -42,6 +44,12 @@ export function ChatHeader({
   onOpenSettings,
   onOpenProfile,
 }: ChatHeaderProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const hasActions = Boolean(onVoiceCall || onVideoCall || onOpenVoiceChannel);
+  const run = (fn?: () => void) => {
+    setMenuOpen(false);
+    fn?.();
+  };
   return (
     <header
       className="flex items-center gap-2 border-b bg-background/95 px-2 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur supports-backdrop-filter:bg-background/80"
@@ -108,20 +116,49 @@ export function ChatHeader({
           )}
         </span>
       </button>
-      {onVoiceCall && (
-        <Button variant="ghost" size="icon" className="cursor-pointer" onClick={onVoiceCall} aria-label="Voice call" data-testid="voice-call-btn">
-          <Phone />
-        </Button>
-      )}
-      {onVideoCall && (
-        <Button variant="ghost" size="icon" className="cursor-pointer" onClick={onVideoCall} aria-label="Video call" data-testid="video-call-btn">
-          <Video />
-        </Button>
-      )}
-      {onOpenVoiceChannel && (
-        <Button variant="ghost" size="icon" className="cursor-pointer" onClick={onOpenVoiceChannel} aria-label="Voice channel" data-testid="voice-channel-btn">
-          <Headphones />
-        </Button>
+      {hasActions && (
+        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="cursor-pointer"
+              aria-label="More options"
+              data-testid="chat-actions-btn"
+            >
+              <MoreVertical />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-48 gap-0.5 p-1.5">
+            {onVoiceCall && (
+              <button
+                onClick={() => run(onVoiceCall)}
+                data-testid="voice-call-btn"
+                className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-muted [&_svg]:size-4.5 [&_svg]:text-muted-foreground"
+              >
+                <Phone /> Voice call
+              </button>
+            )}
+            {onVideoCall && (
+              <button
+                onClick={() => run(onVideoCall)}
+                data-testid="video-call-btn"
+                className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-muted [&_svg]:size-4.5 [&_svg]:text-muted-foreground"
+              >
+                <Video /> Video call
+              </button>
+            )}
+            {onOpenVoiceChannel && (
+              <button
+                onClick={() => run(onOpenVoiceChannel)}
+                data-testid="voice-channel-btn"
+                className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-muted [&_svg]:size-4.5 [&_svg]:text-muted-foreground"
+              >
+                <Headphones /> Voice room
+              </button>
+            )}
+          </PopoverContent>
+        </Popover>
       )}
       {onOpenSettings && (
         <Button variant="ghost" size="icon" className="cursor-pointer" onClick={onOpenSettings} aria-label="Settings" data-testid="settings-btn">
