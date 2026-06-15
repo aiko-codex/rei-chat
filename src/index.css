@@ -10,6 +10,20 @@ body {
   overflow: hidden;
 }
 
+/* Lock the document so iOS can't scroll it. In a standalone PWA, focusing an
+   input makes WebKit scroll the *document* to reveal it, and fixed-position
+   elements (our header) move with that scroll — sliding off the top. Making
+   <body> itself fixed means there's no document scroll to move them. #root is
+   still pinned to the visible viewport via --vv-top/--app-h (set in
+   viewport.ts), so the composer stays above the keyboard and the header holds.
+   `position: fixed` here does NOT create a containing block for #root's own
+   fixed positioning (only transform/filter/perspective would). */
+body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+}
+
 /* Pin the app to the *visible* viewport. In an installed PWA, focusing the
    bottom composer makes iOS scroll the page up to reveal the input — dragging
    the header off the top. By fixing #root to the visualViewport's height AND

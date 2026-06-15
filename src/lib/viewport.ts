@@ -29,29 +29,47 @@ export function watchVisualViewport(): void {
         if (el.scrollLeft !== 0) el.scrollLeft = 0;
     };
 
+    // The actual culprit on iOS standalone PWAs: focusing the composer makes
+    // WebKit scroll the *document/window* to reveal the input, and in
+    // standalone mode `position:fixed` moves WITH that scroll — so the fixed
+    // header slides off the top (composer still ends up above the keyboard).
+    // #root is already sized above the keyboard (--app-h), so the window never
+    // legitimately needs to scroll — pin it back to 0.
+    const lockWindow = () => {
+        if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
+        const doc = document.scrollingElement as HTMLElement | null;
+        if (doc) snapBack(doc);
+    };
+
     // capture phase: `scroll` doesn't bubble, so capture catches it on any
-    // element on the way down; only the shell containers get reset
+    // element on the way down. Reset the shell containers and the document;
+    // the message list ([data-testid="message-list"]) is left free to scroll.
     document.addEventListener(
         'scroll',
         (e) => {
             if (isShell(e.target)) snapBack(e.target);
+            else if (e.target === document || e.target === document.scrollingElement) lockWindow();
         },
         true,
     );
+    window.addEventListener('scroll', lockWindow, { passive: true });
 
-    // a focus can scroll a container in one shot without a continuous scroll
-    // event — reset both shells after the focus settles (and on later frames)
+    // a focus can scroll the page/container in one shot without a continuous
+    // scroll event — reset everything after the focus settles (and later frames
+    // to catch iOS's delayed scroll-to-input)
     document.addEventListener('focusin', () => {
         const reset = () => {
             const root = document.getElementById('root');
             const shell = document.querySelector<HTMLElement>('[data-testid="app-shell"]');
             if (root) snapBack(root);
             if (shell) snapBack(shell);
+            lockWindow();
         };
         reset();
         requestAnimationFrame(reset);
         setTimeout(reset, 100);
         setTimeout(reset, 300);
+        setTimeout(reset, 500);
     });
 
     const vv = window.visualViewport;
