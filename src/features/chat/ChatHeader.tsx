@@ -105,7 +105,7 @@ export function ChatHeader({
                   className={cn(
                     'size-1.5 shrink-0 rounded-full',
                     connState === 'online' && 'bg-emerald-500',
-                    connState === 'connecting' && 'animate-pulse bg-amber-500',
+                    connState === 'connecting' && 'animate-pulse bg-muted-foreground/60',
                     connState === 'offline' && 'bg-muted-foreground/40',
                   )}
                   data-testid="conn-dot"

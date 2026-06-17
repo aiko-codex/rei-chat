@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
+  AtSign,
   Bell,
   Check,
   ChevronRight,
   Eraser,
-  KeyRound,
   Lock,
+  LogOut,
   Monitor,
   Moon,
   Palette,
@@ -14,6 +15,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Smartphone,
+  Sparkles,
   Sun,
   Type,
   Unplug,
@@ -32,6 +34,11 @@ import { ACCENTS, getAccentId, setAccent } from '@/lib/accent';
 import { cn } from '@/lib/utils';
 import { clearServerCiphertext, fetchVersions, type DeviceVersion } from '@/lib/message-api';
 import { forceRefresh } from '@/lib/pwa-update';
+import { getAccount, clearSession } from '@/lib/session';
+import { logout } from '@/lib/account-api';
+import { clearConversationKeys } from '@/lib/conversation-api';
+import { AccountPanel } from './AccountPanel';
+import { WhatsNewPanel } from './WhatsNewPanel';
 import { ChangePINDialog } from './ChangePINDialog';
 import { ManageDevicesDialog } from './ManageDevicesDialog';
 import { EditProfileDialog } from './EditProfileDialog';
@@ -266,12 +273,16 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
   const manageVisible = versionTaps >= 5;
 
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const account = getAccount();
+  // accounts mode replaces device pairing — hide the legacy pairing/device rows
+  const accountsMode = Boolean(account);
   const [manageDevicesOpen, setManageDevicesOpen] = useState(false);
   const [changePinOpen, setChangePinOpen] = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [pairDeviceOpen, setPairDeviceOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [resetPairingOpen, setResetPairingOpen] = useState(false);
   const [clearCiphertextOpen, setClearCiphertextOpen] = useState(false);
   const [revokePushOpen, setRevokePushOpen] = useState(false);
 
@@ -282,13 +293,6 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
   const handleSaveProfile = (profile: Profile) => {
     setMyProfile(profile); // persists locally + publishes to the server
     sendPeerProfile(profile); // instant push if currently P2P-connected
-  };
-
-  const handleResetPairing = () => {
-    clearPairing();
-    toast.success('Pairing reset');
-    // Reload to go back to pairing screen
-    window.location.href = '/';
   };
 
   const handleClearCiphertext = async () => {
@@ -310,6 +314,13 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
     toast.info('Push subscription revocation not yet implemented');
   };
 
+  const handleSignOut = async () => {
+    await logout();
+    clearConversationKeys();
+    clearSession();
+    window.location.href = '/';
+  };
+
   return (
     <div className="flex h-full flex-col" data-testid="settings-screen">
       <header className="flex items-center gap-2 border-b px-2 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
@@ -328,7 +339,7 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
 
       <div className="flex-1 overflow-y-auto pb-6">
         <button
-          onClick={handleEditProfile}
+          onClick={accountsMode ? () => setAccountOpen(true) : handleEditProfile}
           className="flex w-full items-center gap-3 px-4 py-5 text-left transition-colors hover:bg-muted"
           data-testid="settings-edit-profile"
         >
@@ -350,6 +361,19 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
           <ChevronRight className="size-4 text-muted-foreground/50" />
         </button>
 
+        {account && (
+          <>
+            <SectionLabel>Account</SectionLabel>
+            <Row
+              icon={<AtSign className="size-4" />}
+              label="Username & name"
+              hint={`@${account.username}`}
+              onClick={() => setAccountOpen(true)}
+              testId="settings-account"
+            />
+          </>
+        )}
+
         <SectionLabel>Security</SectionLabel>
         <Row
           icon={<Lock className="size-4" />}
@@ -358,20 +382,24 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
           onClick={() => setChangePinOpen(true)}
           testId="settings-change-pin"
         />
-        <Row
-          icon={<QrCode className="size-4" />}
-          label="Pair a device"
-          hint="Show QR to set up her phone"
-          onClick={() => setPairDeviceOpen(true)}
-          testId="settings-pair-device"
-        />
-        <Row
-          icon={<Smartphone className="size-4" />}
-          label="Manage devices"
-          hint="Locked to 2 devices · remove one to free a slot"
-          onClick={() => setManageDevicesOpen(true)}
-          testId="settings-manage-devices"
-        />
+        {!accountsMode && (
+          <>
+            <Row
+              icon={<QrCode className="size-4" />}
+              label="Pair a device"
+              hint="Show QR to set up her phone"
+              onClick={() => setPairDeviceOpen(true)}
+              testId="settings-pair-device"
+            />
+            <Row
+              icon={<Smartphone className="size-4" />}
+              label="Manage devices"
+              hint="Locked to 2 devices · remove one to free a slot"
+              onClick={() => setManageDevicesOpen(true)}
+              testId="settings-manage-devices"
+            />
+          </>
+        )}
 
         <SectionLabel>Appearance</SectionLabel>
         <Row
@@ -396,6 +424,13 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
           onClick={handleForceRefresh}
           testId="settings-force-refresh"
         />
+        <Row
+          icon={<Sparkles className="size-4" />}
+          label="What's new"
+          hint={`Version history · v${__APP_VERSION__}`}
+          onClick={() => setWhatsNewOpen(true)}
+          testId="settings-whats-new"
+        />
 
         <AnimatePresence>
           {manageVisible && (
@@ -406,14 +441,6 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
               data-testid="settings-manage-section"
             >
               <SectionLabel>Manage</SectionLabel>
-              <Row
-                icon={<KeyRound className="size-4" />}
-                label="Reset pairing"
-                hint="Both devices will need the passphrase again"
-                destructive
-                onClick={() => setResetPairingOpen(true)}
-                testId="settings-reset-pairing"
-              />
               <Row
                 icon={<Eraser className="size-4" />}
                 label="Clear server ciphertext"
@@ -434,7 +461,18 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
           )}
         </AnimatePresence>
 
-        <DeviceVersions />
+        {accountsMode && (
+          <Row
+            icon={<LogOut className="size-4" />}
+            label="Sign out"
+            hint={account ? `@${account.username}` : undefined}
+            destructive
+            onClick={() => void handleSignOut()}
+            testId="settings-sign-out"
+          />
+        )}
+
+        {!accountsMode && <DeviceVersions />}
 
         <button
           onClick={() => setVersionTaps((t) => t + 1)}
@@ -464,16 +502,6 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
         }}
       />
       <NotificationsDialog open={notificationsOpen} onOpenChange={setNotificationsOpen} />
-
-      <ConfirmDialog
-        open={resetPairingOpen}
-        onOpenChange={setResetPairingOpen}
-        title="Reset pairing"
-        description="Both devices will need the pairing code again. Your local messages will remain, but you'll need to re-pair to sync."
-        destructive
-        confirmText="Reset"
-        onConfirm={handleResetPairing}
-      />
 
       <ConfirmDialog
         open={clearCiphertextOpen}
@@ -524,6 +552,70 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
               <ThemeControl />
               <AccentControl />
               <TextSizeControl />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* What's new sub-page — app-bundled changelog timeline */}
+      <AnimatePresence>
+        {whatsNewOpen && (
+          <motion.div
+            key="whats-new"
+            className="absolute inset-0 z-10 flex flex-col bg-background"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+            data-testid="settings-whats-new-page"
+          >
+            <header className="flex items-center gap-2 border-b px-2 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="cursor-pointer"
+                onClick={() => setWhatsNewOpen(false)}
+                aria-label="Back"
+                data-testid="settings-whats-new-back"
+              >
+                <ArrowLeft />
+              </Button>
+              <p className="text-sm font-semibold">What's new</p>
+            </header>
+            <div className="flex-1 overflow-y-auto pt-3 pb-6">
+              <WhatsNewPanel />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Account sub-page — username + display name with live validation */}
+      <AnimatePresence>
+        {accountOpen && (
+          <motion.div
+            key="account"
+            className="absolute inset-0 z-10 flex flex-col bg-background"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+            data-testid="settings-account-page"
+          >
+            <header className="flex items-center gap-2 border-b px-2 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="cursor-pointer"
+                onClick={() => setAccountOpen(false)}
+                aria-label="Back"
+                data-testid="settings-account-back"
+              >
+                <ArrowLeft />
+              </Button>
+              <p className="text-sm font-semibold">Account</p>
+            </header>
+            <div className="flex-1 overflow-y-auto pt-2 pb-6">
+              <AccountPanel />
             </div>
           </motion.div>
         )}

@@ -10,6 +10,7 @@
  */
 import { getRoomId, SIGNAL_URL, VAPID_PUBLIC_KEY } from './config';
 import { getDeviceId } from './identity';
+import { getToken, isLoggedIn } from './session';
 
 /** Web Push needs the VAPID key as a Uint8Array (applicationServerKey). */
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
@@ -69,6 +70,15 @@ export async function enablePush(): Promise<boolean> {
             });
         }
 
+        // accounts mode: subscribe against the account (token); else the legacy room
+        if (isLoggedIn()) {
+            const res = await fetch(`${SIGNAL_URL}?action=c_push_subscribe`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: getToken(), sub: sub.toJSON() }),
+            });
+            return res.ok;
+        }
         const res = await fetch(`${SIGNAL_URL}?action=push_subscribe`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -92,7 +102,13 @@ export async function disablePush(): Promise<void> {
         const sub = await reg.pushManager.getSubscription();
         const endpoint = sub?.endpoint;
         if (sub) await sub.unsubscribe();
-        if (SIGNAL_URL) {
+        if (SIGNAL_URL && isLoggedIn()) {
+            await fetch(`${SIGNAL_URL}?action=c_push_unsubscribe`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: getToken(), endpoint }),
+            });
+        } else if (SIGNAL_URL) {
             await fetch(`${SIGNAL_URL}?action=push_unsubscribe`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

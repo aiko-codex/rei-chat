@@ -15,6 +15,7 @@ const TOKEN_KEY = 'rei-session-token';
 const ACCOUNT_KEY = 'rei-account';
 const PUB_KEY = 'rei-acct-pub';
 const PRIV_KEY = 'rei-acct-priv';
+const MUST_KEY = 'rei-must-set-password';
 
 export interface Account {
   userId: string;
@@ -25,7 +26,13 @@ export interface Account {
 
 let token: string | null = localStorage.getItem(TOKEN_KEY);
 let account: Account | null = readAccount();
-let keys: KeyPair | null = readKeys();
+// Keys are decoded lazily, NOT at module load: decoding goes through libsodium
+// (`fromB64`), whose WASM isn't initialized yet when this module is first
+// imported. Decoding eagerly here threw → keys came back null → a logged-in
+// user got bounced to sign-in on every refresh. We keep the raw base64 in
+// localStorage and decode on first `getKeys()` once sodium is ready.
+let keys: KeyPair | null = null;
+let keysDecoded = false;
 
 function readAccount(): Account | null {
   try {
@@ -56,11 +63,39 @@ export function getAccount(): Account | null {
 }
 
 export function getKeys(): KeyPair | null {
+  if (!keysDecoded) {
+    keys = readKeys();
+    // only latch as decoded once it actually succeeds — if sodium isn't ready
+    // yet, retry on the next call rather than caching a spurious null
+    if (keys) keysDecoded = true;
+  }
   return keys;
+}
+
+/** sodium-free presence check: are wrapped keys persisted for this account?
+ *  Used at boot to decide home-vs-sign-in without touching libsodium (whose
+ *  WASM may not be initialized yet). The actual decode happens later. */
+export function hasStoredKeys(): boolean {
+  return Boolean(localStorage.getItem(PUB_KEY) && localStorage.getItem(PRIV_KEY));
 }
 
 export function isLoggedIn(): boolean {
   return Boolean(token && account);
+}
+
+/** true if this account still needs to set its real password (no keypair yet) */
+export function mustSetPassword(): boolean {
+  return localStorage.getItem(MUST_KEY) === '1';
+}
+
+export function setMustSetPassword(must: boolean): void {
+  if (must) localStorage.setItem(MUST_KEY, '1');
+  else localStorage.removeItem(MUST_KEY);
+}
+
+/** logged in and ready to do crypto (keys available) */
+export function isUnlocked(): boolean {
+  return isLoggedIn() && !mustSetPassword() && hasStoredKeys();
 }
 
 export function setToken(t: string): void {
@@ -75,6 +110,7 @@ export function setAccount(a: Account): void {
 
 export function setKeys(k: KeyPair): void {
   keys = k;
+  keysDecoded = true;
   localStorage.setItem(PUB_KEY, toB64(k.publicKey));
   localStorage.setItem(PRIV_KEY, toB64(k.privateKey));
 }
@@ -83,8 +119,10 @@ export function clearSession(): void {
   token = null;
   account = null;
   keys = null;
+  keysDecoded = false;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(ACCOUNT_KEY);
   localStorage.removeItem(PUB_KEY);
   localStorage.removeItem(PRIV_KEY);
+  localStorage.removeItem(MUST_KEY);
 }

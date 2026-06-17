@@ -14,7 +14,16 @@ import {
   unwrapPrivateKey,
   wrapPrivateKey,
 } from './account-crypto';
-import { getKeys, getToken, setAccount, setKeys, setToken, type Account } from './session';
+import {
+  clearSession,
+  getKeys,
+  getToken,
+  setAccount,
+  setKeys,
+  setMustSetPassword,
+  setToken,
+  type Account,
+} from './session';
 
 function url(action: string, params: Record<string, string> = {}): string {
   const q = new URLSearchParams({ action, ...params });
@@ -64,8 +73,11 @@ export async function login(
   password: string,
 ): Promise<{ mustSetPassword: boolean }> {
   const data = await postJson<LoginResp>('login', { identifier, password });
+  // clear any stale keys/account from a previously signed-in account on this device
+  clearSession();
   setToken(data.token);
   setAccount(data.account);
+  setMustSetPassword(data.mustSetPassword);
   if (!data.mustSetPassword && data.wrappedPrivkey && data.pubkey) {
     const priv = unwrapPrivateKey(data.wrappedPrivkey, password);
     if (!priv) throw new Error('could not unlock your keys (wrong password?)');
@@ -88,6 +100,28 @@ export async function setPassword(newPassword: string): Promise<void> {
     wrappedPrivkey: wrapped,
   });
   setKeys(kp);
+  setMustSetPassword(false);
+}
+
+/** live availability check for a candidate username (your own counts as free) */
+export async function checkUsername(
+  username: string,
+): Promise<{ valid: boolean; available: boolean }> {
+  return getJson<{ valid: boolean; available: boolean }>('username_available', { username });
+}
+
+/**
+ * Update your own username (must be unique) and/or display name. Returns the
+ * refreshed account, which is also written back into the session.
+ */
+export async function updateAccount(input: {
+  username?: string;
+  displayName?: string;
+  avatar?: string;
+}): Promise<Account> {
+  const data = await postJson<{ ok: boolean; account: Account }>('update_account', input);
+  setAccount(data.account);
+  return data.account;
 }
 
 export async function logout(): Promise<void> {

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { setPassword } from '@/lib/account-api';
 import { getAccount } from '@/lib/session';
+import { Lock, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 
 /**
  * First-login: set your own password. This is when the account keypair is
@@ -14,11 +15,11 @@ export function SetPasswordScreen({ onDone }: { onDone: () => void }) {
   const account = getAccount();
   const [pw, setPw] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const tooShort = pw.length > 0 && pw.length < 6;
-  const mismatch = confirm.length > 0 && pw !== confirm;
   const valid = pw.length >= 6 && pw === confirm;
 
   const submit = async (e: React.FormEvent) => {
@@ -36,51 +37,150 @@ export function SetPasswordScreen({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className='flex h-full flex-col items-center justify-center bg-background px-8'>
-      <motion.form
-        initial={{ opacity: 0, y: 8 }}
+    <div className='flex h-full flex-col items-center justify-center bg-linear-to-br from-background via-background to-background px-6 py-8'>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-        onSubmit={submit}
-        className='w-full max-w-xs space-y-5'
+        transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+        className='w-full max-w-sm'
       >
-        <div className='space-y-1 text-center'>
-          <h1 className='text-xl font-semibold tracking-tight'>
-            Welcome{account ? `, @${account.username}` : ''}
-          </h1>
-          <p className='text-sm leading-relaxed text-muted-foreground'>
-            Set a password only you know. It encrypts your messages — if you forget it,
-            your chats can't be recovered.
-          </p>
+        {/* Header with Icon */}
+        <div className='mb-8 flex flex-col items-center space-y-4'>
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 0.1, duration: 0.4 }}
+            className='flex items-center justify-center'
+          >
+            <div className='rounded-2xl bg-linear-to-br from-primary/10 to-primary/5 p-3'>
+              <Lock className='h-6 w-6 text-primary' />
+            </div>
+          </motion.div>
+          <div className='space-y-2 text-center'>
+            <h1 className='text-3xl font-bold tracking-tight text-foreground'>
+              Secure Your Account
+            </h1>
+            <p className='text-sm leading-relaxed text-muted-foreground'>
+              Set a strong password that only you know. It encrypts all your messages and can't be recovered if forgotten.
+            </p>
+          </div>
         </div>
 
-        <div className='space-y-2.5'>
-          <Input
-            type='password'
-            value={pw}
-            onChange={(e) => setPw(e.target.value)}
-            placeholder='New password'
-            autoComplete='new-password'
-            data-testid='setpw-password'
-          />
-          <Input
-            type='password'
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            placeholder='Confirm password'
-            autoComplete='new-password'
-            data-testid='setpw-confirm'
-          />
-          {tooShort && <p className='text-xs text-muted-foreground'>At least 6 characters.</p>}
-          {mismatch && <p className='text-xs text-destructive'>Passwords don't match.</p>}
-        </div>
+        {/* Form */}
+        <motion.form
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2, duration: 0.3 }}
+          onSubmit={submit}
+          className='space-y-4'
+        >
+          <div className='space-y-3'>
+            <div className='space-y-1.5'>
+              <label htmlFor='password' className='text-xs font-semibold uppercase tracking-wider text-muted-foreground'>
+                New Password
+              </label>
+              <div className='relative'>
+                <Input
+                  id='password'
+                  type={showPw ? 'text' : 'password'}
+                  value={pw}
+                  onChange={(e) => setPw(e.target.value)}
+                  placeholder='••••••••'
+                  autoComplete='new-password'
+                  data-testid='setpw-password'
+                  className='h-11 rounded-xl border-border/50 bg-muted/40 px-4 pr-10 transition-all focus:bg-background'
+                />
+                <button
+                  type='button'
+                  onClick={() => setShowPw(!showPw)}
+                  className='absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors'
+                  tabIndex={-1}
+                  aria-label={showPw ? 'Hide password' : 'Show password'}
+                >
+                  {showPw ? <EyeOff className='h-4 w-4' /> : <Eye className='h-4 w-4' />}
+                </button>
+              </div>
+            </div>
 
-        {error && <p className='text-center text-sm text-destructive'>{error}</p>}
+            <div className='space-y-1.5'>
+              <label htmlFor='confirm' className='text-xs font-semibold uppercase tracking-wider text-muted-foreground'>
+                Confirm Password
+              </label>
+              <div className='relative'>
+                <Input
+                  id='confirm'
+                  type={showConfirm ? 'text' : 'password'}
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  placeholder='••••••••'
+                  autoComplete='new-password'
+                  data-testid='setpw-confirm'
+                  className='h-11 rounded-xl border-border/50 bg-muted/40 px-4 pr-10 transition-all focus:bg-background'
+                />
+                <button
+                  type='button'
+                  onClick={() => setShowConfirm(!showConfirm)}
+                  className='absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors'
+                  tabIndex={-1}
+                  aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                >
+                  {showConfirm ? <EyeOff className='h-4 w-4' /> : <Eye className='h-4 w-4' />}
+                </button>
+              </div>
+            </div>
+          </div>
 
-        <Button type='submit' className='w-full' disabled={busy || !valid} data-testid='setpw-submit'>
-          {busy ? 'Setting up…' : 'Continue'}
-        </Button>
-      </motion.form>
+          {/* Password Requirements */}
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className='space-y-2 rounded-lg bg-muted/30 px-3.5 py-3'
+          >
+            <div className='flex items-center gap-2'>
+              <motion.div
+                animate={{ scale: pw.length >= 6 ? 1 : 0.8 }}
+                className={`shrink-0 text-xs font-medium ${pw.length >= 6 ? 'text-emerald-500' : 'text-muted-foreground'}`}
+              >
+                {pw.length >= 6 ? <CheckCircle2 className='h-4 w-4' /> : <div className='h-4 w-4 rounded-full border border-muted-foreground' />}
+              </motion.div>
+              <span className='text-xs font-medium text-muted-foreground'>At least 6 characters</span>
+            </div>
+            <div className='flex items-center gap-2'>
+              <motion.div
+                animate={{ scale: pw === confirm && confirm.length > 0 ? 1 : 0.8 }}
+                className={`shrink-0 text-xs font-medium ${pw === confirm && confirm.length > 0 ? 'text-emerald-500' : 'text-muted-foreground'}`}
+              >
+                {pw === confirm && confirm.length > 0 ? <CheckCircle2 className='h-4 w-4' /> : <div className='h-4 w-4 rounded-full border border-muted-foreground' />}
+              </motion.div>
+              <span className='text-xs font-medium text-muted-foreground'>Passwords match</span>
+            </div>
+          </motion.div>
+
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className='rounded-lg bg-destructive/10 px-3.5 py-2.5 text-center text-sm font-medium text-destructive'
+            >
+              {error}
+            </motion.div>
+          )}
+
+          <Button
+            type='submit'
+            className='h-12 w-full rounded-full text-base font-semibold shadow-md transition-all hover:shadow-lg disabled:shadow-none'
+            disabled={busy || !valid}
+            data-testid='setpw-submit'
+          >
+            {busy ? 'Setting up…' : 'Secure & Continue'}
+          </Button>
+        </motion.form>
+
+        {/* Footer Text */}
+        <p className='mt-6 text-center text-xs text-muted-foreground'>
+          Welcome{account ? `, @${account.username}` : ''}! Your password is never shared with anyone.
+        </p>
+      </motion.div>
     </div>
   );
 }

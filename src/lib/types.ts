@@ -46,6 +46,9 @@ export interface Channel {
   /** true once this channel is collaborative (invited + accepted) — only then
    *  is it backed up room-keyed and synced between the two devices */
   shared?: boolean;
+  /** accounts mode: the connection this channel is shared with (synced via
+   *  conv_local under that connection). Set on the sharer and the adopter. */
+  sharedConnId?: string;
 }
 
 /** a pending collaboration invite for a personal/todo channel, surfaced as a
@@ -101,6 +104,7 @@ export type Screen =
   | 'sign-in'
   | 'set-password'
   | 'admin'
+  | 'connections'
   | 'profile-setup'
   | 'pairing'
   | 'home'

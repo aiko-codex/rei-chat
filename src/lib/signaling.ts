@@ -11,6 +11,13 @@ export interface SignalEnvelope {
   payload: unknown;
 }
 
+/** accounts-mode signaling rides a connection + session token instead of a
+ *  room + deviceId, hitting the `c_signal*` endpoints. */
+export interface ConnectionAuth {
+  connectionId: string;
+  token: string;
+}
+
 export class SignalingClient {
   readonly clientId = crypto.randomUUID().replace(/-/g, '');
   private cursor = 0;
@@ -21,13 +28,26 @@ export class SignalingClient {
     private readonly endpoint: string,
     private readonly room: string,
     private readonly onSignal: (signal: SignalEnvelope) => void,
+    /** when set, use connection-keyed signaling (accounts mode) */
+    private readonly conn: ConnectionAuth | null = null,
   ) {}
 
   async send(type: string, payload: unknown): Promise<void> {
-    // fire-and-forget: callers don't handle failures, and recovery is driven
-    // by the poll loop + hello retries, so an unreachable endpoint must not
-    // surface as an unhandled rejection
     try {
+      if (this.conn) {
+        await fetch(`${this.endpoint}?action=c_signal`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: this.conn.token,
+            connectionId: this.conn.connectionId,
+            clientId: this.clientId,
+            type,
+            payload,
+          }),
+        });
+        return;
+      }
       await fetch(`${this.endpoint}?action=signal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -43,9 +63,10 @@ export class SignalingClient {
     this.running = true;
     // ignore anything posted before we joined
     try {
-      const res = await fetch(
-        `${this.endpoint}?action=cursor&room=${encodeURIComponent(this.room)}&deviceId=${encodeURIComponent(getDeviceId())}`,
-      );
+      const url = this.conn
+        ? `${this.endpoint}?action=c_signal_cursor&connectionId=${encodeURIComponent(this.conn.connectionId)}&token=${encodeURIComponent(this.conn.token)}`
+        : `${this.endpoint}?action=cursor&room=${encodeURIComponent(this.room)}&deviceId=${encodeURIComponent(getDeviceId())}`;
+      const res = await fetch(url);
       const data: { cursor: number } = await res.json();
       this.cursor = data.cursor;
     } catch {
@@ -63,9 +84,11 @@ export class SignalingClient {
     while (this.running) {
       try {
         this.abort = new AbortController();
-        const url =
-          `${this.endpoint}?action=poll&room=${encodeURIComponent(this.room)}` +
-          `&deviceId=${encodeURIComponent(getDeviceId())}&clientId=${this.clientId}&since=${this.cursor}`;
+        const url = this.conn
+          ? `${this.endpoint}?action=c_signal_poll&connectionId=${encodeURIComponent(this.conn.connectionId)}` +
+            `&token=${encodeURIComponent(this.conn.token)}&clientId=${this.clientId}&since=${this.cursor}`
+          : `${this.endpoint}?action=poll&room=${encodeURIComponent(this.room)}` +
+            `&deviceId=${encodeURIComponent(getDeviceId())}&clientId=${this.clientId}&since=${this.cursor}`;
         const res = await fetch(url, { signal: this.abort.signal });
         if (!res.ok) throw new Error(`poll ${res.status}`);
         const data: { signals: SignalEnvelope[]; cursor: number } = await res.json();

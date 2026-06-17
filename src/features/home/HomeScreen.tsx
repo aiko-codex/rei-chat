@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   Bell,
@@ -29,6 +29,14 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
 import { useChatStore } from '@/store/chat-store';
 import { DM_CHANNEL_ID, type Message } from '@/lib/types';
 
@@ -61,9 +69,16 @@ interface HomeScreenProps {
   onOpenChannel: (channelId: string) => void;
   onOpenSettings: () => void;
   onOpenNotifications: () => void;
+  /** accounts mode only: open the People (search/requests/connections) screen */
+  onOpenPeople?: () => void;
 }
 
-export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications }: HomeScreenProps) {
+export function HomeScreen({
+  onOpenChannel,
+  onOpenSettings,
+  onOpenNotifications,
+  onOpenPeople,
+}: HomeScreenProps) {
   const messages = useChatStore((s) => s.messages);
   const channels = useChatStore((s) => s.channels);
   const status = useChatStore((s) => s.status);
@@ -78,7 +93,24 @@ export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications 
   const renameChannel = useChatStore((s) => s.renameChannel);
   const invites = useChatStore((s) => s.invites);
   const acceptances = useChatStore((s) => s.acceptances);
-  const notifCount = invites.length + acceptances.length;
+  const rememberConnectionPeer = useChatStore((s) => s.rememberConnectionPeer);
+  const shareChannelWithConnection = useChatStore((s) => s.shareChannelWithConnection);
+
+  // accounts mode: the chats list is driven by accepted connections (not the
+  // legacy mock DM). `onOpenPeople` is only passed in accounts mode.
+  const accountsMode = Boolean(onOpenPeople);
+  const connections = useChatStore((s) => s.connections);
+  const syncConnections = useChatStore((s) => s.syncConnections);
+  const [loadedConnections, setLoadedConnections] = useState(false);
+  useEffect(() => {
+    if (!accountsMode) return;
+    void syncConnections().finally(() => setLoadedConnections(true));
+  }, [accountsMode, syncConnections]);
+  const connectionAccepts = useChatStore((s) => s.connectionAccepts);
+  const acceptedConnections = connections.filter((c) => c.status === 'accepted');
+  const incomingRequests = connections.filter((c) => c.status === 'pending' && c.incoming).length;
+  const notifCount =
+    invites.length + acceptances.length + incomingRequests + connectionAccepts.length;
 
   // deleting a channel wipes its notes too — give a 5s undo window
   const deleteChannel = (channelId: string) => {
@@ -157,6 +189,18 @@ export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications 
       <header className="flex items-center justify-between px-5 pb-2 pt-[max(1rem,env(safe-area-inset-top))]">
         <h1 className="text-2xl font-bold">Chats</h1>
         <div className="flex items-center gap-1">
+          {onOpenPeople && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="cursor-pointer"
+              onClick={onOpenPeople}
+              aria-label="People"
+              data-testid="home-people-btn"
+            >
+              <UserPlus />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -199,8 +243,68 @@ export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications 
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto">
-        {/* the DM */}
+      <div className="flex flex-1 flex-col overflow-y-auto">
+        {/* accounts mode: empty state when no one is connected yet */}
+        {accountsMode && loadedConnections && acceptedConnections.length === 0 && (
+          <Empty className="flex-1 border-0" data-testid="home-empty">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <UserPlus />
+              </EmptyMedia>
+              <EmptyTitle>No conversations yet</EmptyTitle>
+              <EmptyDescription>
+                Find someone by their @username and send a request. Once they
+                accept, your chat shows up here.
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button
+                onClick={onOpenPeople}
+                className="cursor-pointer"
+                data-testid="home-empty-find-people"
+              >
+                <UserPlus />
+                Find people
+              </Button>
+            </EmptyContent>
+          </Empty>
+        )}
+
+        {/* accounts mode: accepted connections as chat rows */}
+        {accountsMode &&
+          acceptedConnections.map((conn) => (
+            <button
+              key={conn.connectionId}
+              onClick={() => {
+                rememberConnectionPeer(conn.connectionId, {
+                  displayName: conn.account.displayName,
+                  username: conn.account.username,
+                  avatar: conn.account.avatar,
+                });
+                onOpenChannel(conn.connectionId);
+              }}
+              className="flex w-full cursor-pointer items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-muted/60"
+              data-testid={`home-connection-${conn.connectionId}`}
+            >
+              <Avatar size="lg">
+                {conn.account.avatar && (
+                  <AvatarImage src={conn.account.avatar} alt={conn.account.displayName} />
+                )}
+                <AvatarFallback className="bg-primary/90 text-white">
+                  {conn.account.displayName[0]?.toUpperCase() ?? '?'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[17px] font-semibold">{conn.account.displayName}</p>
+                <p className="truncate text-[13px] text-muted-foreground">
+                  @{conn.account.username}
+                </p>
+              </div>
+            </button>
+          ))}
+
+        {/* the legacy DM (pre-accounts pairing mode only) */}
+        {!accountsMode && (
         <motion.button
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
@@ -242,6 +346,7 @@ export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications 
             )}
           </div>
         </motion.button>
+        )}
 
         {/* personal channels (device-local until shared via an accepted invite) */}
         {channels.length > 0 && (
@@ -409,7 +514,37 @@ export function HomeScreen({ onOpenChannel, onOpenSettings, onOpenNotifications 
               <Pencil />
               <span className="text-sm font-medium">Edit name</span>
             </button>
-            {!menuChannel?.shared && (
+            {/* accounts mode: share this channel with a connected account */}
+            {accountsMode && !menuChannel?.sharedConnId &&
+              acceptedConnections.map((conn) => (
+                <button
+                  key={conn.connectionId}
+                  onClick={() => {
+                    if (!menuChannel) return;
+                    rememberConnectionPeer(conn.connectionId, {
+                      displayName: conn.account.displayName,
+                      username: conn.account.username,
+                      avatar: conn.account.avatar,
+                    });
+                    shareChannelWithConnection(menuChannel.id, conn.connectionId);
+                    setMenuChannelId(null);
+                    toast(`Shared #${menuChannel.name} with ${conn.account.displayName}`);
+                  }}
+                  data-testid={`channel-menu-share-${conn.connectionId}`}
+                  className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-muted [&_svg]:size-4.5"
+                >
+                  <UserPlus />
+                  <span>
+                    <span className="block text-sm font-medium">
+                      Share with {conn.account.displayName}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      @{conn.account.username} — syncs to both of you
+                    </span>
+                  </span>
+                </button>
+              ))}
+            {!accountsMode && !menuChannel?.shared && (
               <button
                 onClick={() => menuChannel && invite(menuChannel.id)}
                 data-testid="channel-menu-invite"

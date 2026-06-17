@@ -9,9 +9,13 @@ import { CHAT_BACKGROUNDS } from '@/lib/chat-theme';
 
 interface ChatThemePanelProps {
   onBack: () => void;
+  /** the connection this wallpaper is for (null = legacy DM) so the selection
+   *  syncs over the right channel even though Chat Details has unmounted the
+   *  chat screen (where `activeConnectionId` is normally set) */
+  connectionId?: string | null;
 }
 
-export function ChatThemePanel({ onBack }: ChatThemePanelProps) {
+export function ChatThemePanel({ onBack, connectionId = null }: ChatThemePanelProps) {
   const chatBg = useChatStore((s) => s.chatBg);
   const chatBgUrl = useChatStore((s) => s.chatBgUrl);
   const setChatBackground = useChatStore((s) => s.setChatBackground);
@@ -24,7 +28,7 @@ export function ChatThemePanel({ onBack }: ChatThemePanelProps) {
   const activeId = chatBg?.id ?? 'default';
 
   const pickPreset = (id: string) => {
-    void setChatBackground({ id, at: Date.now() });
+    void setChatBackground({ id, at: Date.now() }, undefined, connectionId);
   };
 
   const pickCustom = async (file: File) => {
@@ -32,7 +36,7 @@ export function ChatThemePanel({ onBack }: ChatThemePanelProps) {
     try {
       const blob = await fileToWallpaperBlob(file);
       const wid = `wallpaper-${Date.now()}`;
-      await setChatBackground({ id: 'custom', wid, mime: 'image/jpeg', at: Date.now() }, blob);
+      await setChatBackground({ id: 'custom', wid, mime: 'image/jpeg', at: Date.now() }, blob, connectionId);
       toast.success('Wallpaper updated');
     } catch {
       toast.error("Couldn't use that image");

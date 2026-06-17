@@ -5,6 +5,7 @@ import { SignInScreen } from '@/features/auth/SignInScreen';
 import { SetPasswordScreen } from '@/features/auth/SetPasswordScreen';
 import { CallScreen } from '@/features/call/CallScreen';
 import { ChatScreen } from '@/features/chat/ChatScreen';
+import { ConnectionsScreen } from '@/features/connections/ConnectionsScreen';
 import { ChatDetailsScreen } from '@/features/chat/ChatDetailsScreen';
 import { HomeScreen } from '@/features/home/HomeScreen';
 import { PinScreen } from '@/features/lock/PinScreen';
@@ -20,7 +21,7 @@ import {
     stopPeerService,
 } from '@/lib/peer-service';
 import { isPaired, SIGNAL_URL } from '@/lib/config';
-import { getAccount, isLoggedIn } from '@/lib/session';
+import { getAccount, hasStoredKeys, isLoggedIn, mustSetPassword } from '@/lib/session';
 import { isUnlockFresh, touchUnlock } from '@/lib/pin';
 import { syncTodoReminders } from '@/lib/todo-reminders';
 import { setupPWAUpdates } from '@/lib/pwa-update';
@@ -51,6 +52,13 @@ function accountsMode(): boolean {
 function landingScreen(): Screen {
     if (accountsMode()) {
         if (!isLoggedIn()) return 'sign-in';
+        // logged in with the temp password but keypair not yet created
+        if (mustSetPassword()) return 'set-password';
+        // keys missing (e.g. cleared storage) — can't decrypt without the
+        // password, so re-authenticate to unwrap them. NOTE: this is a
+        // sodium-free presence check — decoding the keys needs libsodium's
+        // WASM, which isn't ready at this synchronous boot point.
+        if (!hasStoredKeys()) return 'sign-in';
         return 'home';
     }
     // legacy mock mode (no server): profile + pairing
@@ -58,9 +66,12 @@ function landingScreen(): Screen {
     return isPaired() ? 'home' : 'pairing';
 }
 
-/** where to land at boot: skip the lock screen if still within the grace window */
+/** where to land at boot: skip the lock screen if still within the grace window.
+ *  In accounts mode a persisted login IS the gate (survives until storage is
+ *  cleared), so we never fall back to the PIN lock — no repeated password ask. */
 function bootScreen(): Screen {
     if (ADMIN_ROUTE) return 'admin';
+    if (accountsMode() && isLoggedIn()) return landingScreen();
     if (!isUnlockFresh()) return 'lock';
     return landingScreen();
 }
@@ -105,6 +116,31 @@ export default function App() {
             if (p) setMyProfile(p);
         }
     }, []);
+
+    // accounts mode: load the local message cache once unlocked (the legacy
+    // `hydrate` is gated on pairing, which accounts mode never sets)
+    useEffect(() => {
+        if (!unlocked || !accountsMode() || !isLoggedIn()) return;
+        void useChatStore.getState().hydrateAccount();
+    }, [unlocked]);
+
+    // accounts mode: poll the connection list so incoming requests + new
+    // connections surface (drives the bell badge + Notifications + chats list)
+    useEffect(() => {
+        if (!unlocked || !accountsMode() || !isLoggedIn()) return;
+        const tick = () => {
+            if (document.visibilityState === 'visible') {
+                void useChatStore.getState().syncConnections();
+            }
+        };
+        tick();
+        const id = setInterval(tick, 5000);
+        document.addEventListener('visibilitychange', tick);
+        return () => {
+            clearInterval(id);
+            document.removeEventListener('visibilitychange', tick);
+        };
+    }, [unlocked]);
 
     // device-membership lock: the room admits only its two devices. Claim our
     // slot first; if the space is full (a 3rd device), don't sync or connect.
@@ -166,6 +202,8 @@ export default function App() {
         }, 60_000);
         const onVisible = () => {
             if (document.visibilityState !== 'visible') return;
+            // accounts mode: the persisted login is the gate — never re-lock
+            if (accountsMode() && isLoggedIn()) return;
             if (isUnlockFresh()) touchUnlock();
             else setScreen('lock');
         };
@@ -261,6 +299,22 @@ export default function App() {
                     </div>
                 )}
 
+                {screen === 'connections' && (
+                    <div className='absolute inset-0 z-10 bg-background'>
+                        <ConnectionsScreen
+                            onBack={() => setScreen('home')}
+                            onOpenConnection={(connectionId, account) => {
+                                useChatStore.getState().rememberConnectionPeer(connectionId, {
+                                    displayName: account.displayName,
+                                    username: account.username,
+                                    avatar: account.avatar,
+                                });
+                                openChannel(connectionId);
+                            }}
+                        />
+                    </div>
+                )}
+
                 {screen === 'profile-setup' && (
                     <ProfileSetupScreen
                         onDone={(profile) => {
@@ -293,6 +347,9 @@ export default function App() {
                             onOpenChannel={openChannel}
                             onOpenSettings={() => setScreen('settings')}
                             onOpenNotifications={() => setScreen('notifications')}
+                            onOpenPeople={
+                                accountsMode() ? () => setScreen('connections') : undefined
+                            }
                         />
                     )}
 
@@ -338,6 +395,7 @@ export default function App() {
                 {screen === 'chat-details' && (
                     <div className='absolute inset-0 z-10 bg-background'>
                         <ChatDetailsScreen
+                            channelId={activeChannel}
                             onBack={() => setScreen('chat')}
                             onJump={(id) => {
                                 setJump({ id, nonce: Date.now() });

@@ -1,4 +1,4 @@
-import { ArrowLeft, BellOff, Check, Hash, ListTodo, RefreshCw } from 'lucide-react';
+import { ArrowLeft, BellOff, Check, Hash, ListTodo, RefreshCw, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/store/chat-store';
@@ -17,13 +17,35 @@ export function NotificationsScreen({ onBack, onOpenChannel }: NotificationsScre
   const declineInvite = useChatStore((s) => s.declineInvite);
   const dismissAcceptance = useChatStore((s) => s.dismissAcceptance);
 
+  // accounts mode: incoming connection requests
+  const connections = useChatStore((s) => s.connections);
+  const acceptConnectionRequest = useChatStore((s) => s.acceptConnectionRequest);
+  const declineConnectionRequest = useChatStore((s) => s.declineConnectionRequest);
+  const connectionRequests = connections.filter((c) => c.status === 'pending' && c.incoming);
+  const connectionAccepts = useChatStore((s) => s.connectionAccepts);
+  const dismissConnectionAccept = useChatStore((s) => s.dismissConnectionAccept);
+  const rememberConnectionPeer = useChatStore((s) => s.rememberConnectionPeer);
+
   const accept = async (channelId: string, name: string) => {
     await acceptInvite(channelId);
     toast(`Joined #${name}`);
     onOpenChannel(channelId);
   };
 
-  const isEmpty = invites.length === 0 && acceptances.length === 0;
+  const acceptRequest = async (connectionId: string, otherUserId: string, username: string) => {
+    try {
+      await acceptConnectionRequest(connectionId, otherUserId);
+      toast(`Connected with @${username}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not accept');
+    }
+  };
+
+  const isEmpty =
+    invites.length === 0 &&
+    acceptances.length === 0 &&
+    connectionRequests.length === 0 &&
+    connectionAccepts.length === 0;
 
   return (
     <div className="flex h-full flex-col" data-testid="notifications-screen">
@@ -55,6 +77,80 @@ export function NotificationsScreen({ onBack, onOpenChannel }: NotificationsScre
           </div>
         ) : (
           <ul className="flex flex-col gap-2 py-2">
+            {connectionAccepts.map((acc) => (
+              <li
+                key={`cacc-${acc.connectionId}`}
+                className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-3"
+                data-testid={`connection-accept-${acc.connectionId}`}
+              >
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 [&_svg]:size-4.5">
+                  <Check />
+                </span>
+                <button
+                  className="min-w-0 flex-1 cursor-pointer text-left"
+                  onClick={() => {
+                    rememberConnectionPeer(acc.connectionId, {
+                      displayName: acc.displayName,
+                      username: acc.username,
+                    });
+                    dismissConnectionAccept(acc.connectionId);
+                    onOpenChannel(acc.connectionId);
+                  }}
+                >
+                  <p className="truncate text-sm">
+                    <span className="font-semibold">{acc.displayName}</span> accepted your request
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">@{acc.username} · say hi 👋</p>
+                </button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="cursor-pointer"
+                  onClick={() => dismissConnectionAccept(acc.connectionId)}
+                  data-testid={`connection-accept-dismiss-${acc.connectionId}`}
+                >
+                  Got it
+                </Button>
+              </li>
+            ))}
+            {connectionRequests.map((req) => (
+              <li
+                key={`req-${req.connectionId}`}
+                className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-3"
+                data-testid={`connection-request-${req.connectionId}`}
+              >
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary [&_svg]:size-4.5">
+                  <UserPlus />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">
+                    <span className="font-semibold">{req.account.displayName}</span> wants to connect
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">@{req.account.username}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="cursor-pointer"
+                    onClick={() => void declineConnectionRequest(req.connectionId)}
+                    data-testid={`connection-request-decline-${req.connectionId}`}
+                  >
+                    Decline
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="cursor-pointer"
+                    onClick={() =>
+                      void acceptRequest(req.connectionId, req.account.userId, req.account.username)
+                    }
+                    data-testid={`connection-request-accept-${req.connectionId}`}
+                  >
+                    Accept
+                  </Button>
+                </div>
+              </li>
+            ))}
             {acceptances.map((notice) => (
               <li
                 key={`acc-${notice.channelId}`}

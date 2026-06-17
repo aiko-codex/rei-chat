@@ -7,7 +7,7 @@
  * the signaling server sees SDP/ICE envelopes only.
  */
 
-import { SignalingClient, type SignalEnvelope } from './signaling';
+import { SignalingClient, type ConnectionAuth, type SignalEnvelope } from './signaling';
 
 export type PeerStatus = 'offline' | 'connecting' | 'connected';
 
@@ -92,8 +92,10 @@ export class PeerChat {
     room: string,
     private readonly cb: PeerChatCallbacks,
     private readonly iceServers: RTCIceServer[],
+    /** when set, signaling rides a connection + session token (accounts mode) */
+    conn: ConnectionAuth | null = null,
   ) {
-    this.signaling = new SignalingClient(endpoint, room, (s) => void this.handleSignal(s));
+    this.signaling = new SignalingClient(endpoint, room, (s) => void this.handleSignal(s), conn);
   }
 
   private negotiateStart = 0;

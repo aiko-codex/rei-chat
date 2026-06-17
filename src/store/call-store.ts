@@ -51,6 +51,23 @@ interface CallStore {
   toggleCamera: () => void;
 }
 
+/** poll until the data channel is open, or give up after `timeoutMs` */
+function waitForPeer(timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (isPeerConnected()) return resolve(true);
+    const started = Date.now();
+    const id = setInterval(() => {
+      if (isPeerConnected()) {
+        clearInterval(id);
+        resolve(true);
+      } else if (Date.now() - started > timeoutMs) {
+        clearInterval(id);
+        resolve(false);
+      }
+    }, 250);
+  });
+}
+
 function getMedia(type: CallType): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
     audio: {
@@ -81,9 +98,18 @@ export const useCallStore = create<CallStore>((set, get) => {
 
     startCall: async (type) => {
       if (get().state !== 'idle') return;
+      // the P2P link is usually still negotiating right after a chat opens
+      // ("online" reflects the server presence lane, not the data channel) —
+      // wait for it briefly instead of failing the moment they tap call
       if (!isPeerConnected()) {
-        toast('Not connected — can’t call right now');
-        return;
+        const t = toast.loading('Connecting…');
+        const ready = await waitForPeer(8000);
+        toast.dismiss(t);
+        if (!ready) {
+          toast('Not connected — can’t call right now');
+          return;
+        }
+        if (get().state !== 'idle') return; // an incoming call landed meanwhile
       }
       let stream: MediaStream;
       try {

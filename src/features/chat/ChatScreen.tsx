@@ -17,12 +17,24 @@ import {
 import {
     sendPeerMedia,
     sendPeerMessage,
+    sendPeerReaction,
     sendPeerRead,
     sendPeerRemove,
     sendPeerTyping,
+    startConnectionPeer,
+    stopPeerService,
 } from '@/lib/peer-service';
+import {
+    pollConv,
+    removeConvMessage,
+    setConvTyping,
+    uploadConvMedia,
+    uploadConvMessage,
+} from '@/lib/conversation-api';
+import { isLoggedIn } from '@/lib/session';
 import { currentUserId } from '@/lib/mock-data';
 import { useChatStore } from '@/store/chat-store';
+import { useCallStore } from '@/store/call-store';
 import { backgroundCss } from '@/lib/chat-theme';
 import { DM_CHANNEL_ID, type MediaAttachment, type Message } from '@/lib/types';
 
@@ -72,10 +84,87 @@ export function ChatScreen({
     );
     const channel = channels.find((c) => c.id === channelId);
 
+    // accounts mode: a connection conversation is any open channel that isn't
+    // the legacy DM and isn't one of this device's local channels.
+    const isConnection = !isDm && !channel && isLoggedIn() && Boolean(SIGNAL_URL);
+    const connectionPeers = useChatStore((s) => s.connectionPeers);
+    const setActiveConnection = useChatStore((s) => s.setActiveConnection);
+    const syncConversation = useChatStore((s) => s.syncConversation);
+    const syncConvMeta = useChatStore((s) => s.syncConvMeta);
+    const setStorePeerTyping = useChatStore((s) => s.setPeerTyping);
+    const connPeer = isConnection ? connectionPeers[channelId] : undefined;
+    // peer presence for a connection conversation, fed by the c_poll response
+    const [connPeerOnline, setConnPeerOnline] = useState(false);
+
     // clear the unread badge when the channel opens
     useEffect(() => {
         markSeen(channelId);
     }, [channelId, markSeen]);
+
+    // connection conversation: mark active + long-poll the server for instant
+    // delivery + the peer's typing flag (the PHP host can't hold WebSockets, so
+    // the long-poll returns the moment a message lands or typing changes)
+    useEffect(() => {
+        if (!isConnection) return;
+        setActiveConnection(channelId);
+        // bring up a P2P link for this connection so voice/video calls + the
+        // voice room can negotiate (messages still ride the server truth lane)
+        startConnectionPeer(channelId);
+        let active = true;
+        const cursorKey = `rei-conv-cursor:${channelId}`;
+        const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+        const loop = async () => {
+            while (active) {
+                if (document.visibilityState !== 'visible') {
+                    await sleep(1000);
+                    continue;
+                }
+                const since = Number(localStorage.getItem(cursorKey)) || 0;
+                try {
+                    const r = await pollConv(channelId, since);
+                    if (!active) break;
+                    setStorePeerTyping(r.peerTyping);
+                    setConnPeerOnline(r.peerOnline);
+                    if (r.messages) await syncConversation(channelId);
+                    // reactions + read receipts ride a separate overlay store
+                    // that the long-poll doesn't wake on — pull it every tick
+                    // (cursor-based, so it's a cheap no-op when nothing changed)
+                    // so a reaction shows in near-real-time, not only when the
+                    // next message happens to arrive
+                    void syncConvMeta(channelId);
+                } catch {
+                    if (!active) break;
+                    setConnPeerOnline(false);
+                    await sleep(2500); // backoff on error
+                }
+                await sleep(500); // gentle pacing (caps server hits during typing)
+            }
+        };
+        void loop();
+        return () => {
+            active = false;
+            setActiveConnection(null);
+            setStorePeerTyping(false);
+            setConnPeerOnline(false);
+            // tear down the P2P link unless a call is still in progress
+            if (useCallStore.getState().state === 'idle') stopPeerService();
+        };
+    }, [isConnection, channelId, setActiveConnection, syncConversation, syncConvMeta, setStorePeerTyping]);
+
+    // throttled typing sender for connections
+    const lastTypingRef = useRef(0);
+    const sendConnTyping = useCallback(
+        (typing: boolean) => {
+            // FAST: P2P typing frame (instant when the peer is live)
+            sendPeerTyping(typing);
+            // DURABLE: server typing flag (the long-poll surfaces it otherwise)
+            const now = Date.now();
+            if (typing && now - lastTypingRef.current < 1500) return;
+            lastTypingRef.current = typing ? now : 0;
+            void setConvTyping(channelId, typing);
+        },
+        [channelId],
+    );
 
     // Mark "read" only when the user is genuinely viewing the latest message
     // (channel open + scrolled to the bottom), not merely because a new message
@@ -86,20 +175,22 @@ export function ChatScreen({
     const lastReadSent = useRef(0);
     const onViewedBottom = useCallback(() => {
         markSeen(channelId);
-        if (!isDm) return;
+        // DM + connections both get an instant P2P read receipt (the peer-service
+        // routes it to the right conversation); markSeen handles the server lane
+        if (!isDm && !isConnection) return;
         const newest = messages.reduce((max, m) => (m.sentAt > max ? m.sentAt : max), 0);
         if (newest > lastReadSent.current) {
             lastReadSent.current = newest;
             sendPeerRead(newest);
         }
-    }, [channelId, isDm, messages, markSeen]);
+    }, [channelId, isDm, isConnection, messages, markSeen]);
 
     const imageMessages = messages.filter((m) => m.media?.kind === 'image');
 
     // the shared chat wallpaper applies to the DM only (personal channels stay
     // plain). Recomputed per render so a theme toggle re-resolves light/dark.
     const isDark = document.documentElement.classList.contains('dark');
-    const bgCss = isDm ? backgroundCss(chatBg, isDark, chatBgUrl) : undefined;
+    const bgCss = isDm || isConnection ? backgroundCss(chatBg, isDark, chatBgUrl) : undefined;
     const backgroundStyle = bgCss ? { background: bgCss } : undefined;
 
     // server store is what reaches her when she's offline — surface failures
@@ -116,6 +207,15 @@ export function ChatScreen({
         }
     };
 
+    // connection conversation: store on the server truth lane; mark failed if it
+    // doesn't land (no P2P fast lane for connections yet — server is the path)
+    const storeConv = async (message: Message) => {
+        const ok = await uploadConvMessage(channelId, message);
+        if (ok) return;
+        const current = useChatStore.getState().messages.find((m) => m.id === message.id);
+        if (current && current.status !== 'failed') upsert({ ...current, status: 'failed' });
+    };
+
     const send = (text: string) => {
         const message: Message = {
             id: `local-${Date.now()}`,
@@ -126,10 +226,15 @@ export function ChatScreen({
             status: 'sent',
             replyToId: replyTarget?.id,
         };
-        // optimistic: shows immediately; DM additionally goes P2P (ack flips
-        // to 'delivered') and as ciphertext to the server store
+        // optimistic: shows immediately. Both DM and connections take the same
+        // two-lane path — FAST over the P2P data channel (ack flips to
+        // 'delivered'), DURABLE as ciphertext on the server store so it still
+        // reaches her when the peers aren't both present.
         upsert(message);
-        if (isDm) {
+        if (isConnection) {
+            sendPeerMessage(message);
+            void storeConv(message);
+        } else if (isDm) {
             sendPeerMessage(message);
             if (SIGNAL_URL) void storeOnServer(message);
         }
@@ -140,6 +245,10 @@ export function ChatScreen({
         const optimistic: Message = { ...message, status: 'sent' };
         upsert(optimistic);
         sendPeerMessage(optimistic);
+        if (isConnection) {
+            void storeConv(optimistic);
+            return;
+        }
         if (SIGNAL_URL) void storeOnServer(optimistic);
     };
 
@@ -156,6 +265,28 @@ export function ChatScreen({
         // persist the bytes locally (survives reload) and show immediately
         if (SIGNAL_URL) void putBlob(message.id, blob);
         upsert(message);
+        if (isConnection) {
+            // FAST: stream the bytes straight to the peer if it's live
+            sendPeerMedia(message, blob);
+            const store = useChatStore.getState();
+            store.setTransfer(message.id, 0.01);
+            void (async () => {
+                // DURABLE: encrypted server backup so it restores / reaches her later
+                const ok = await uploadConvMedia(channelId, message.id, blob, (p) =>
+                    store.setTransfer(message.id, p),
+                );
+                store.clearTransfer(message.id);
+                if (ok) {
+                    // the metadata row makes it appear in the peer's history
+                    void storeConv({ ...message, media: { ...message.media!, url: '' } });
+                } else {
+                    const cur = store.messages.find((m) => m.id === message.id);
+                    if (cur) upsert({ ...cur, status: 'failed' });
+                }
+            })();
+            setReplyTarget(null);
+            return;
+        }
         if (isDm) {
             // stream the bytes to the peer live over the binary media channel
             sendPeerMedia(message, blob);
@@ -185,6 +316,7 @@ export function ChatScreen({
                 ? undefined
                 : emoji;
         setReaction(actionTarget.id, currentUserId, next);
+        sendPeerReaction(actionTarget.id, next ?? null); // instant over P2P
         setActionTarget(null);
     };
 
@@ -192,11 +324,9 @@ export function ChatScreen({
     const toggleDefaultReaction = (message: Message) => {
         const def = useChatStore.getState().quickReactions[0];
         const current = message.reactions?.[currentUserId];
-        setReaction(
-            message.id,
-            currentUserId,
-            current === def ? undefined : def,
-        );
+        const next = current === def ? undefined : def;
+        setReaction(message.id, currentUserId, next);
+        sendPeerReaction(message.id, next ?? null); // instant over P2P
     };
 
     // E2E means the server can never restore deleted content — both removal
@@ -218,7 +348,11 @@ export function ChatScreen({
         removeLocal(removed.id);
         setActionTarget(null);
         // instant, no undo — remove our copy, the server copy, and hers now
-        if (isDm && SIGNAL_URL) {
+        // (P2P for the live case, server for the durable/offline case)
+        if (isConnection) {
+            sendPeerRemove(removed.id);
+            void removeConvMessage(channelId, removed.id);
+        } else if (isDm && SIGNAL_URL) {
             void removeRemoteMessage(removed.id);
             sendPeerRemove(removed.id);
         }
@@ -261,8 +395,12 @@ export function ChatScreen({
         // P2P upsert path and the server upsert so it reaches her offline too
         const edited: Message = { ...editTarget, text: trimmed, edited: true };
         upsert(edited);
-        sendPeerMessage(edited);
-        if (SIGNAL_URL) void storeOnServer(edited);
+        sendPeerMessage(edited); // fast P2P (same id replaces on the peer)
+        if (isConnection) {
+            void storeConv(edited);
+        } else if (SIGNAL_URL) {
+            void storeOnServer(edited);
+        }
         setEditTarget(null);
     };
 
@@ -308,6 +446,33 @@ export function ChatScreen({
                     onOpenVoiceChannel={onOpenVoiceChannel}
                     onOpenProfile={onOpenDetails}
                 />
+            ) : isConnection ? (
+                <ChatHeader
+                    title={connPeer?.displayName ?? 'Chat'}
+                    avatarUrl={connPeer?.avatar ?? undefined}
+                    connState={
+                        connPeerOnline || peerStatus === 'connected'
+                            ? 'online'
+                            : peerStatus === 'connecting'
+                              ? 'connecting'
+                              : 'offline'
+                    }
+                    subtitle={
+                        connPeerOnline || peerStatus === 'connected'
+                            ? peerTyping
+                                ? 'typing…'
+                                : 'online'
+                            : peerStatus === 'connecting'
+                              ? 'connecting…'
+                              : connPeer
+                                ? `@${connPeer.username}`
+                                : 'end-to-end encrypted'
+                    }
+                    onBack={onBack}
+                    onVoiceCall={onVoiceCall}
+                    onVideoCall={onVideoCall}
+                    onOpenProfile={onOpenDetails}
+                />
             ) : (
                 <ChatHeader
                     title={channel?.name ?? 'channel'}
@@ -324,11 +489,11 @@ export function ChatScreen({
                 key={channelId}
                 messages={messages}
                 currentUserId={currentUserId}
-                peerTyping={isDm && peerTyping}
+                peerTyping={(isDm || isConnection) && peerTyping}
                 onLongPress={setActionTarget}
                 onOpenImage={setLightboxTarget}
                 onRetry={retry}
-                onDoubleTapReact={isDm ? toggleDefaultReaction : undefined}
+                onDoubleTapReact={isDm || isConnection ? toggleDefaultReaction : undefined}
                 onSwipeReply={(m) => {
                     setEditTarget(null);
                     setReplyTarget(m);
@@ -338,7 +503,7 @@ export function ChatScreen({
                 jumpToId={jump?.id}
                 jumpNonce={jump?.nonce}
                 emptyState={
-                    isDm ? (
+                    isDm || isConnection ? (
                         <div className='flex max-w-xs flex-col items-center gap-3 text-center'>
                             <span className='flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary [&_svg]:size-7'>
                                 <Heart />
@@ -374,7 +539,7 @@ export function ChatScreen({
             <Composer
                 onSend={send}
                 onSendMedia={sendMedia}
-                onTyping={isDm ? sendPeerTyping : undefined}
+                onTyping={isDm ? sendPeerTyping : isConnection ? sendConnTyping : undefined}
                 replyTo={replyTarget}
                 replyToName={
                     replyTarget ? displayName(replyTarget.senderId) : undefined

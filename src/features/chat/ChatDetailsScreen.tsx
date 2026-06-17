@@ -15,6 +15,8 @@ interface ChatDetailsScreenProps {
   onBack: () => void;
   /** jump to a message in the conversation (from search) */
   onJump: (id: string) => void;
+  /** which conversation: the legacy DM, or a connection id */
+  channelId?: string;
 }
 
 interface DetailRowProps {
@@ -42,17 +44,23 @@ function DetailRow({ icon, label, hint, onClick, testId }: DetailRowProps) {
   );
 }
 
-export function ChatDetailsScreen({ onBack, onJump }: ChatDetailsScreenProps) {
+export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }: ChatDetailsScreenProps) {
   const peerProfile = useChatStore((s) => s.peerProfile);
+  const connectionPeers = useChatStore((s) => s.connectionPeers);
   const allMessages = useChatStore((s) => s.messages);
   const [panel, setPanel] = useState<Panel | null>(null);
 
-  const dmMessages = useMemo(
-    () => allMessages.filter((m) => (m.channelId ?? DM_CHANNEL_ID) === DM_CHANNEL_ID),
-    [allMessages],
+  const isConnection = channelId !== DM_CHANNEL_ID && Boolean(connectionPeers[channelId]);
+  const connPeer = isConnection ? connectionPeers[channelId] : undefined;
+
+  const convMessages = useMemo(
+    () => allMessages.filter((m) => (m.channelId ?? DM_CHANNEL_ID) === channelId),
+    [allMessages, channelId],
   );
 
-  const name = peerProfile?.name ?? 'Her';
+  const name = isConnection ? connPeer!.displayName : peerProfile?.name ?? 'Her';
+  const avatar = isConnection ? connPeer!.avatar ?? undefined : peerProfile?.avatar;
+  const avatarColor = isConnection ? undefined : peerProfile?.color;
 
   return (
     <div className="relative flex h-full flex-col" data-testid="chat-details-screen">
@@ -67,15 +75,16 @@ export function ChatDetailsScreen({ onBack, onJump }: ChatDetailsScreenProps) {
         {/* Instagram-style profile block */}
         <div className="flex flex-col items-center gap-3 px-6 py-8">
           <Avatar className="size-24">
-            {peerProfile?.avatar && <AvatarImage src={peerProfile.avatar} alt={name} />}
+            {avatar && <AvatarImage src={avatar} alt={name} />}
             <AvatarFallback
               className="text-3xl font-semibold text-white"
-              style={peerProfile?.color ? { backgroundColor: peerProfile.color } : undefined}
+              style={avatarColor ? { backgroundColor: avatarColor } : { backgroundColor: '#b03a6e' }}
             >
               {name[0]?.toUpperCase()}
             </AvatarFallback>
           </Avatar>
           <p className="text-lg font-semibold">{name}</p>
+          {connPeer && <p className="-mt-2 text-xs text-muted-foreground">@{connPeer.username}</p>}
           <p className="flex items-center gap-1 text-xs text-emerald-600">
             <ShieldCheck className="size-3.5" /> End-to-end encrypted
           </p>
@@ -119,14 +128,19 @@ export function ChatDetailsScreen({ onBack, onJump }: ChatDetailsScreenProps) {
           >
             {panel === 'search' && (
               <ChatSearchPanel
-                messages={dmMessages}
+                messages={convMessages}
                 onBack={() => setPanel(null)}
                 onJump={onJump}
               />
             )}
-            {panel === 'theme' && <ChatThemePanel onBack={() => setPanel(null)} />}
+            {panel === 'theme' && (
+              <ChatThemePanel
+                onBack={() => setPanel(null)}
+                connectionId={isConnection ? channelId : null}
+              />
+            )}
             {panel === 'gallery' && (
-              <ChatGalleryPanel messages={dmMessages} onBack={() => setPanel(null)} />
+              <ChatGalleryPanel messages={convMessages} onBack={() => setPanel(null)} />
             )}
           </motion.div>
         )}

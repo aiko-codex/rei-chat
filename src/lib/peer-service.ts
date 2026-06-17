@@ -9,11 +9,13 @@
  */
 import { PeerChat } from './webrtc';
 import { getIceServers, getRoomId, isPaired, SIGNAL_URL } from './config';
+import { getToken } from './session';
 import { putBlob } from './db';
 import { useChatStore } from '@/store/chat-store';
 import { useCallStore } from '@/store/call-store';
 import { useVoiceRoomStore } from '@/store/voice-room-store';
 import { DM_CHANNEL_ID, type Message, type Profile } from './types';
+import type { ConnectionAuth } from './signaling';
 
 /** call control frames (the media itself rides RTP tracks, not the channel) */
 export type CallFrame =
@@ -35,6 +37,7 @@ type ChatFrame =
   | { kind: 'typing'; typing: boolean }
   | { kind: 'remove'; id: string }
   | { kind: 'read'; at: number }
+  | { kind: 'reaction'; id: string; emoji: string | null }
   | { kind: 'profile'; profile: Profile }
   // announces a media transfer; the bytes follow over the binary media channel
   | { kind: 'media-meta'; message: Message }
@@ -49,6 +52,7 @@ function asChatFrame(data: unknown): ChatFrame | null {
   if (f.kind === 'typing' && typeof f.typing === 'boolean') return f;
   if (f.kind === 'remove' && typeof f.id === 'string') return f;
   if (f.kind === 'read' && typeof f.at === 'number') return f;
+  if (f.kind === 'reaction' && typeof f.id === 'string') return f;
   if (f.kind === 'profile' && typeof f.profile === 'object') return f;
   if (f.kind === 'media-meta' && typeof f.message === 'object') return f;
   if (f.kind === 'call-offer' && (f.callType === 'voice' || f.callType === 'video')) return f;
@@ -63,6 +67,15 @@ const MEDIA_CHUNK_BYTES = 16384;
 
 let peer: PeerChat | null = null;
 let starting = false;
+// Which logical conversation the live peer belongs to: the legacy DM by
+// default, or a connection id in accounts mode. The peer is per-conversation
+// (it only exists while that chat is open on both sides), so inbound frames
+// always belong to this channel — we route received messages/reactions to it.
+let peerChannelId: string = DM_CHANNEL_ID;
+/** true when the live peer is a connection conversation (accounts mode) */
+function peerIsConnection(): boolean {
+  return peerChannelId !== DM_CHANNEL_ID;
+}
 const outbox = new Map<string, Message>();
 let typingExpire: ReturnType<typeof setTimeout> | null = null;
 let lastTypingSent = 0;
@@ -87,8 +100,8 @@ function flushOutbox(p: PeerChat): void {
   }
 }
 
-export function startPeerService(): void {
-  if (!SIGNAL_URL || peer || starting || !isPaired()) return;
+function spawnPeer(room: string, conn: ConnectionAuth | null): void {
+  if (!SIGNAL_URL || peer || starting) return;
   starting = true;
   const store = useChatStore.getState();
 
@@ -96,20 +109,29 @@ export function startPeerService(): void {
   // first ICE attempt has a relay candidate — STUN-only stalls on CGNAT/mobile
   void getIceServers().then((iceServers) => {
     starting = false;
-    if (peer || !isPaired()) return; // stopped or already started during the await
+    if (peer) return; // stopped or already started during the await
 
-  const p = new PeerChat(SIGNAL_URL, getRoomId(), {
+  const p = new PeerChat(SIGNAL_URL, room, {
     onStatus: (s) => {
       store.setStatus(s);
       if (s === 'connected') {
-        // she sees the name I typed on my device — and vice versa
-        const profile = useChatStore.getState().myProfile;
-        if (profile) p.sendChat({ kind: 'profile', profile } satisfies ChatFrame);
+        // legacy DM: she sees the name I typed on my device — and vice versa.
+        // Connections carry their identity via the account (display name +
+        // avatar), so we don't push the local DM profile over a connection peer.
+        if (!peerIsConnection()) {
+          const profile = useChatStore.getState().myProfile;
+          if (profile) p.sendChat({ kind: 'profile', profile } satisfies ChatFrame);
+        }
         flushOutbox(p);
-        // catch anything that went through the server while we were apart
-        void store.syncHistory();
-        void store.syncMeta();
-        void store.syncLocal();
+        // catch anything that went through the server while we were apart, on
+        // whichever lane this peer belongs to
+        if (peerIsConnection()) {
+          void store.syncConversation(peerChannelId);
+        } else {
+          void store.syncHistory();
+          void store.syncMeta();
+          void store.syncLocal();
+        }
       } else {
         store.setPeerTyping(false);
       }
@@ -122,10 +144,11 @@ export function startPeerService(): void {
           // always ack — the sender may have missed our previous ack
           p.sendChat({ kind: 'ack', id: frame.message.id } satisfies ChatFrame);
           store.setPeerTyping(false);
-          // the sender labels messages from their own perspective — flip it
+          // the sender labels messages from their own perspective — flip it,
+          // and pin it to whichever conversation this peer belongs to
           store.upsert({
             ...frame.message,
-            channelId: DM_CHANNEL_ID,
+            channelId: peerChannelId,
             senderId: 'her',
             status: 'delivered',
           });
@@ -156,12 +179,20 @@ export function startPeerService(): void {
           break;
         }
         case 'read': {
-          // peer is genuinely viewing the DM (in chat, scrolled to bottom) —
-          // flip our sent receipts instantly instead of waiting for the poll.
-          // Only ever move the high-water-mark forward (frames can arrive late).
-          if (frame.at > useChatStore.getState().peerReadAt) {
+          // peer is genuinely viewing the chat (scrolled to bottom) — flip our
+          // sent receipts instantly instead of waiting for the poll. Only ever
+          // move the high-water-mark forward (frames can arrive late).
+          if (peerIsConnection()) {
+            store.applyPeerReadAtConnection(peerChannelId, frame.at);
+          } else if (frame.at > useChatStore.getState().peerReadAt) {
             store.applyPeerReadAt(frame.at);
           }
+          break;
+        }
+        case 'reaction': {
+          // instant reaction over P2P — apply locally only (the server overlay
+          // is the offline fallback; applying here must not re-publish)
+          store.applyReactionLocal(frame.id, 'her', frame.emoji ?? undefined);
           break;
         }
         case 'profile': {
@@ -211,10 +242,28 @@ export function startPeerService(): void {
         useVoiceRoomStore.getState().setRemoteStream(stream);
       }
     },
-  }, iceServers);
+  }, iceServers, conn);
   peer = p;
   void p.start();
   });
+}
+
+export function startPeerService(): void {
+  if (!isPaired()) return;
+  peerChannelId = DM_CHANNEL_ID;
+  spawnPeer(getRoomId(), null);
+}
+
+/** accounts mode: bring up a P2P link for a connection. When it connects it
+ *  becomes the FAST path for that conversation (messages, reactions, unsend,
+ *  read receipts, media) — the server truth lane stays the durable fallback so
+ *  nothing is lost when the peers aren't both present. Also carries 1:1 calls
+ *  + the voice room. */
+export function startConnectionPeer(connectionId: string): void {
+  const token = getToken();
+  if (!token) return;
+  peerChannelId = connectionId;
+  spawnPeer(connectionId, { connectionId, token });
 }
 
 /** append a received binary chunk; finalize once we have the whole payload */
@@ -238,7 +287,7 @@ async function finalizeIncoming(): Promise<void> {
   const store = useChatStore.getState();
   store.upsert({
     ...message,
-    channelId: DM_CHANNEL_ID,
+    channelId: peerChannelId,
     senderId: 'her',
     status: 'delivered',
     media: { ...message.media!, url: URL.createObjectURL(blob) },
@@ -251,6 +300,11 @@ export function stopPeerService(): void {
   peer?.close();
   peer = null;
   starting = false;
+  peerChannelId = DM_CHANNEL_ID;
+  // the outbox is a per-conversation P2P redelivery buffer; drop it on teardown
+  // so a message queued for one connection can't flush to the next peer (the
+  // server store is the durable copy, so nothing is lost)
+  outbox.clear();
   if (typingExpire) clearTimeout(typingExpire);
   const store = useChatStore.getState();
   store.setStatus('offline');
@@ -321,6 +375,12 @@ export function sendPeerRemove(id: string): void {
 /** instant read receipt over P2P (high-water-mark epoch ms); server upload is the offline fallback */
 export function sendPeerRead(at: number): boolean {
   return peer?.sendChat({ kind: 'read', at } satisfies ChatFrame) ?? false;
+}
+
+/** instant reaction over P2P (emoji null = removed); the server overlay is the
+ *  offline fallback. Returns false if the data channel isn't open. */
+export function sendPeerReaction(id: string, emoji: string | null): boolean {
+  return peer?.sendChat({ kind: 'reaction', id, emoji } satisfies ChatFrame) ?? false;
 }
 
 /** push my profile to the peer (call after editing it) */

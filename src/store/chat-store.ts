@@ -51,6 +51,23 @@ import {
   uploadProfile,
   type SpaceMember,
 } from '@/lib/message-api';
+import {
+  deleteConvLocal,
+  downloadConvMedia,
+  fetchConvHistory,
+  fetchConvLocal,
+  fetchConvMeta,
+  uploadConvLocal,
+  uploadConvMedia,
+  uploadConvMeta,
+} from '@/lib/conversation-api';
+import {
+  acceptConnection,
+  declineConnection,
+  listConnections,
+  type Connection,
+} from '@/lib/account-api';
+import { isLoggedIn } from '@/lib/session';
 import { mockMessages } from '@/lib/mock-data';
 import { loadReactions, persistReactions } from '@/lib/reactions';
 import {
@@ -105,6 +122,13 @@ function isSharedChannelId(channels: Channel[], channelId?: string): boolean {
   return channels.some((c) => c.id === channelId && c.shared);
 }
 
+/** the connection a channel is shared with (accounts mode), or null */
+function connBackupOf(channels: Channel[], channelId?: string): string | null {
+  if (!channelId || channelId === DM_CHANNEL_ID) return null;
+  const c = channels.find((ch) => ch.id === channelId);
+  return c && c.shared && c.sharedConnId ? c.sharedConnId : null;
+}
+
 /**
  * Make sure a media message has a usable object URL: rebuild from the local
  * blob if we have it, otherwise pull the encrypted bytes from the server
@@ -129,11 +153,18 @@ async function ensureMediaBlob(message: Message): Promise<void> {
  * have it, otherwise from the encrypted server backup (so the wallpaper one
  * device set restores on the other). Returns null for presets / when absent.
  */
-async function ensureWallpaperUrl(bg: ChatBackground | null): Promise<string | null> {
+async function ensureWallpaperUrl(
+  bg: ChatBackground | null,
+  connectionId?: string | null,
+): Promise<string | null> {
   if (!bg || bg.id !== 'custom' || !bg.wid) return null;
   let blob = await getBlob(bg.wid);
   if (!blob) {
-    const downloaded = await downloadMedia(bg.wid, bg.mime ?? 'image/jpeg');
+    // a connection wallpaper rides the per-connection media file; the legacy DM
+    // rides the room-keyed chunked media store
+    const downloaded = connectionId
+      ? await downloadConvMedia(connectionId, bg.wid, bg.mime ?? 'image/jpeg')
+      : await downloadMedia(bg.wid, bg.mime ?? 'image/jpeg');
     if (!downloaded) return null;
     blob = downloaded;
     await putBlob(bg.wid, blob);
@@ -180,6 +211,11 @@ interface ChatStore {
   upsert: (message: Message) => void;
   markDelivered: (id: string) => void;
   setReaction: (id: string, userId: UserId, emoji: string | undefined) => void;
+  /** apply a reaction to local state only — no server/P2P re-publish (used by
+   *  the inbound P2P reaction frame and server overlay sync) */
+  applyReactionLocal: (id: string, userId: UserId, emoji: string | undefined) => void;
+  /** flip our sent messages in a connection to 'read' up to `at` (P2P receipt) */
+  applyPeerReadAtConnection: (connectionId: string, at: number) => void;
   /** local removal only — callers decide about the server copy */
   remove: (id: string) => void;
   setStatus: (status: PeerStatus) => void;
@@ -211,7 +247,7 @@ interface ChatStore {
   /** rename a channel (edit) — re-publishes if the channel is shared */
   renameChannel: (id: string, name: string) => void;
   /** set the shared chat wallpaper (preset or custom photo) and publish it */
-  setChatBackground: (bg: ChatBackground, blob?: Blob) => Promise<void>;
+  setChatBackground: (bg: ChatBackground, blob?: Blob, connectionId?: string | null) => Promise<void>;
   /** publish our read high-water-mark for the DM (call when she's viewing it) */
   markRead: () => void;
   /** apply the peer's read mark — flips our delivered DM sends to 'read' */
@@ -238,6 +274,45 @@ interface ChatStore {
   /** undo for removeChannel: put the channel and its messages back */
   restoreChannel: (channel: Channel, messages: Message[]) => void;
   markSeen: (channelId: string) => void;
+
+  // ── accounts model (2026-06-17): connection-keyed conversations ──────────
+  /** the connection conversation currently open (accounts mode), else null */
+  activeConnectionId: string | null;
+  setActiveConnection: (connectionId: string | null) => void;
+  /** remembered peer display name/username per connection (for the header) */
+  connectionPeers: Record<string, { displayName: string; username: string; avatar?: string | null }>;
+  rememberConnectionPeer: (
+    connectionId: string,
+    peer: { displayName: string; username: string; avatar?: string | null },
+  ) => void;
+  /** pull new messages for a connection from the server (truth lane) */
+  syncConversation: (connectionId: string) => Promise<void>;
+  /** all my connections (accepted + pending); drives chats + request notifications */
+  connections: Connection[];
+  /** notices that someone accepted a request *I* sent (surfaced in Notifications) */
+  connectionAccepts: { connectionId: string; displayName: string; username: string }[];
+  /** dismiss an accepted-request notice */
+  dismissConnectionAccept: (connectionId: string) => void;
+  /** refresh the connection list from the server (polled in accounts mode) */
+  syncConnections: () => Promise<void>;
+  /** accept an incoming connection request (seals the conv key to both) */
+  acceptConnectionRequest: (connectionId: string, otherUserId: string) => Promise<void>;
+  /** decline/cancel a connection request */
+  declineConnectionRequest: (connectionId: string) => Promise<void>;
+  /** peer's read high-water-mark per connection (drives our 'read' ticks) */
+  connectionReadAt: Record<string, number>;
+  /** pull reactions + read receipts for a connection from the server */
+  syncConvMeta: (connectionId: string) => Promise<void>;
+  /** publish our read high-water-mark for a connection (call when viewing it) */
+  markReadConnection: (connectionId: string) => void;
+  /** accounts-mode boot: load the local message cache (the room `hydrate` is
+   *  gated on pairing, which accounts mode never sets) + refresh connections */
+  hydrateAccount: () => Promise<void>;
+  /** share a personal/todo channel with a connected account (backs it up +
+   *  its items to conv_local; the peer auto-adopts it on sync) */
+  shareChannelWithConnection: (channelId: string, connectionId: string) => void;
+  /** pull shared channels/items for a connection and adopt them locally */
+  syncConvLocal: (connectionId: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -260,6 +335,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   acceptances: [],
   chatBg: getStoredBackground(),
   chatBgUrl: null,
+  activeConnectionId: null,
+  connectionPeers: readJson<Record<string, { displayName: string; username: string; avatar?: string | null }>>(
+    'rei-conn-peers',
+  ) ?? {},
+  connections: [],
+  connectionAccepts: [],
+  connectionReadAt: {},
 
   hydrate: async () => {
     if (!persistent || get().hydrated || !isPaired()) return;
@@ -513,6 +595,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (persistent) {
       void putChannel(next);
       if (next.shared) void uploadLocalItem(`ch:${id}`, next);
+      if (next.sharedConnId) void uploadConvLocal(next.sharedConnId, `ch:${id}`, next);
     }
   },
 
@@ -533,8 +616,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }));
   },
 
-  setChatBackground: async (bg, blob) => {
+  setChatBackground: async (bg, blob, connectionId) => {
     storeBackground(bg);
+    // a connection conversation syncs over its own conv overlay/media; the
+    // legacy DM uses the room-keyed meta/media store. The caller passes the
+    // channel explicitly (the Theme panel lives in Chat Details, where the
+    // chat screen — and thus `activeConnectionId` — has already unmounted), so
+    // prefer that and only fall back to the active connection.
+    const connId =
+      connectionId !== undefined ? connectionId : get().activeConnectionId;
     const previousUrl = get().chatBgUrl;
     let url: string | null = null;
     if (bg.id === 'custom' && bg.wid) {
@@ -542,16 +632,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         await putBlob(bg.wid, blob);
         url = URL.createObjectURL(blob);
       } else {
-        url = await ensureWallpaperUrl(bg);
+        url = await ensureWallpaperUrl(bg, connId);
       }
     }
     set({ chatBg: bg, chatBgUrl: url });
     if (previousUrl && previousUrl !== url) URL.revokeObjectURL(previousUrl);
     if (persistent) {
-      // back the photo bytes up (chunked, encrypted) so the peer can restore it
-      if (bg.id === 'custom' && bg.wid && blob) void uploadMedia(bg.wid, blob);
-      // publish the selection on the shared meta store → reaches the other phone
-      void uploadMeta('chat-bg', bg);
+      if (connId) {
+        // back the photo bytes up (encrypted) + publish the selection so the
+        // other phone restores the same wallpaper
+        if (bg.id === 'custom' && bg.wid && blob) void uploadConvMedia(connId, bg.wid, blob);
+        void uploadConvMeta(connId, 'chat-bg', bg);
+      } else {
+        if (bg.id === 'custom' && bg.wid && blob) void uploadMedia(bg.wid, blob);
+        void uploadMeta('chat-bg', bg);
+      }
     }
   },
 
@@ -611,6 +706,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (persistent && isSharedChannelId(get().channels, message.channelId)) {
       void uploadLocalItem(`msg:${message.id}`, message);
     }
+    // accounts mode: a channel shared with a connection backs up to conv_local
+    const connId = connBackupOf(get().channels, message.channelId);
+    if (persistent && connId) void uploadConvLocal(connId, `msg:${message.id}`, message);
   },
 
   markDelivered: (id) => {
@@ -629,15 +727,44 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   setReaction: (id, userId, emoji) => {
+    get().applyReactionLocal(id, userId, emoji);
+    const updated = get().messages.find((m) => m.id === id);
+    if (!persistent || !updated) return;
+    // DURABLE fallback: publish to the server overlay so it reaches her even
+    // while offline. A connection message uses the connection-keyed overlay; the
+    // legacy DM uses the room overlay. (The instant P2P push is fired from the
+    // UI layer — ChatScreen — to keep the store free of the peer-service cycle.)
+    const cid = updated.channelId;
+    if (cid && get().connectionPeers[cid]) {
+      void uploadConvMeta(cid, `react:${id}`, { e: emoji ?? null });
+    } else {
+      void uploadMeta(`react:${id}`, { e: emoji ?? null });
+    }
+  },
+
+  applyReactionLocal: (id, userId, emoji) => {
     set((s) => ({
       messages: s.messages.map((m) =>
-        m.id === id ? { ...m, reactions: { ...m.reactions, [userId]: emoji } } : m,
+        m.id === id ? { ...m, reactions: { ...m.reactions, [userId]: emoji || undefined } } : m,
       ),
     }));
     const updated = get().messages.find((m) => m.id === id);
     if (persistent && updated) void putMessage(updated);
-    // publish to the server overlay store so it reaches her even while offline
-    if (persistent) void uploadMeta(`react:${id}`, { e: emoji ?? null });
+  },
+
+  applyPeerReadAtConnection: (connectionId, at) => {
+    if (at <= (get().connectionReadAt[connectionId] ?? 0)) return;
+    set((s) => ({
+      connectionReadAt: { ...s.connectionReadAt, [connectionId]: at },
+      messages: s.messages.map((m) => {
+        if (m.senderId !== 'me' || m.channelId !== connectionId) return m;
+        if (m.status !== 'sent' && m.status !== 'delivered') return m;
+        if (m.sentAt > at) return m;
+        const next = { ...m, status: 'read' as const };
+        if (persistent) void putMessage(next);
+        return next;
+      }),
+    }));
   },
 
   remove: (id) => {
@@ -648,6 +775,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (persistent && removed && isSharedChannelId(get().channels, removed.channelId)) {
       void deleteLocalItem(`msg:${id}`);
     }
+    const connId = connBackupOf(get().channels, removed?.channelId);
+    if (persistent && connId) void deleteConvLocal(connId, `msg:${id}`);
   },
 
   setStatus: (status) => set({ status, connDiag: status === 'connected' ? get().connDiag : null }),
@@ -734,6 +863,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         void deleteLocalItem(`ch:${id}`);
         for (const m of msgs) void deleteLocalItem(`msg:${m.id}`);
       }
+      if (channel?.sharedConnId) {
+        void deleteConvLocal(channel.sharedConnId, `ch:${id}`);
+        for (const m of msgs) void deleteConvLocal(channel.sharedConnId, `msg:${m.id}`);
+      }
     }
   },
 
@@ -747,6 +880,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (persistent && updated && isSharedChannelId(get().channels, updated.channelId)) {
       void uploadLocalItem(`msg:${updated.id}`, updated);
     }
+    const connId = connBackupOf(get().channels, updated?.channelId);
+    if (persistent && connId && updated) void uploadConvLocal(connId, `msg:${updated.id}`, updated);
   },
 
   restoreChannel: (channel, messages) => {
@@ -771,5 +906,271 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({ lastSeen });
     // opening/viewing the DM means we've read it — publish a read receipt
     if (channelId === DM_CHANNEL_ID) get().markRead();
+    else if (get().connectionPeers[channelId]) get().markReadConnection(channelId);
+  },
+
+  setActiveConnection: (connectionId) => {
+    set({ activeConnectionId: connectionId, peerTyping: false });
+    if (connectionId) void get().syncConversation(connectionId);
+  },
+
+  rememberConnectionPeer: (connectionId, peer) => {
+    const connectionPeers = { ...get().connectionPeers, [connectionId]: peer };
+    localStorage.setItem('rei-conn-peers', JSON.stringify(connectionPeers));
+    set({ connectionPeers });
+  },
+
+  syncConnections: async () => {
+    if (!persistent || !isLoggedIn()) return;
+    try {
+      const connections = await listConnections();
+      set({ connections });
+      // remember each peer's name so an opened conversation has a header
+      const peers = { ...get().connectionPeers };
+      for (const c of connections) {
+        peers[c.connectionId] = {
+          displayName: c.account.displayName,
+          username: c.account.username,
+          avatar: c.account.avatar,
+        };
+      }
+      localStorage.setItem('rei-conn-peers', JSON.stringify(peers));
+      set({ connectionPeers: peers });
+
+      // pull any channels/todos shared with me over each accepted connection
+      for (const c of connections) {
+        if (c.status === 'accepted') void get().syncConvLocal(c.connectionId);
+      }
+
+      // a request I sent that's now accepted → surface a one-time notice
+      const seen = readJson<string[]>('rei-conn-accept-seen') ?? [];
+      const fresh = connections.filter(
+        (c) => c.status === 'accepted' && c.requestedByMe && !seen.includes(c.connectionId),
+      );
+      if (fresh.length) {
+        const seenSet = [...seen, ...fresh.map((c) => c.connectionId)];
+        localStorage.setItem('rei-conn-accept-seen', JSON.stringify(seenSet));
+        set((s) => ({
+          connectionAccepts: [
+            ...s.connectionAccepts,
+            ...fresh
+              .filter((c) => !s.connectionAccepts.some((a) => a.connectionId === c.connectionId))
+              .map((c) => ({
+                connectionId: c.connectionId,
+                displayName: c.account.displayName,
+                username: c.account.username,
+              })),
+          ],
+        }));
+      }
+    } catch {
+      // offline — keep the last list
+    }
+  },
+
+  dismissConnectionAccept: (connectionId) => {
+    set((s) => ({
+      connectionAccepts: s.connectionAccepts.filter((a) => a.connectionId !== connectionId),
+    }));
+  },
+
+  acceptConnectionRequest: async (connectionId, otherUserId) => {
+    await acceptConnection(connectionId, otherUserId);
+    await get().syncConnections();
+  },
+
+  declineConnectionRequest: async (connectionId) => {
+    await declineConnection(connectionId);
+    await get().syncConnections();
+  },
+
+  syncConversation: async (connectionId) => {
+    if (!persistent || !connectionId) return;
+    const cursorKey = `rei-conv-cursor:${connectionId}`;
+    const since = readNum(cursorKey);
+    try {
+      const { messages, cursor } = await fetchConvHistory(connectionId, since);
+      for (const { message } of messages) {
+        // messages carry the connection as their channel id locally
+        const local: Message = { ...message, channelId: connectionId };
+        get().upsert(local);
+        if (persistent) void putMessage(local);
+        // media rows arrive with an empty url — pull + decrypt the bytes
+        if (local.media && !local.media.url) {
+          void (async () => {
+            const existing = await getBlob(local.id);
+            const blob =
+              existing ?? (await downloadConvMedia(connectionId, local.id, local.media!.mimeType));
+            if (!blob) return;
+            if (!existing) await putBlob(local.id, blob);
+            get().upsert({ ...local, media: { ...local.media!, url: URL.createObjectURL(blob) } });
+          })();
+        }
+      }
+      if (cursor > since) localStorage.setItem(cursorKey, String(cursor));
+    } catch {
+      // offline / unreachable — retry on the next poll
+    }
+    // overlays (reactions + read receipts) ride the same poll
+    void get().syncConvMeta(connectionId);
+  },
+
+  syncConvMeta: async (connectionId) => {
+    if (!persistent || !connectionId) return;
+    const cursorKey = `rei-conv-meta-cursor:${connectionId}`;
+    const since = readNum(cursorKey);
+    try {
+      const { rows, cursor } = await fetchConvMeta(connectionId, since);
+      let newestPeerRead = 0;
+      for (const row of rows) {
+        if (row.key.startsWith('react:')) {
+          // apply the reaction without re-publishing (no upload loop)
+          const id = row.key.slice('react:'.length);
+          const userId: UserId = row.mine ? 'me' : 'her';
+          const emoji = (row.value as { e?: string | null } | null)?.e ?? undefined;
+          set((s) => ({
+            messages: s.messages.map((m) =>
+              m.id === id ? { ...m, reactions: { ...m.reactions, [userId]: emoji || undefined } } : m,
+            ),
+          }));
+          const updated = get().messages.find((m) => m.id === id);
+          if (updated) void putMessage(updated);
+        } else if (row.key === 'read' && !row.mine) {
+          const at = (row.value as { at?: number } | null)?.at ?? 0;
+          if (at > newestPeerRead) newestPeerRead = at;
+        } else if (row.key === 'chat-bg') {
+          // shared wallpaper for this connection — last-writer-wins by the
+          // embedded timestamp (a stale row / our own echo never clobbers a
+          // newer pick), mirroring the room-keyed DM handler
+          const bg = row.value as ChatBackground | null;
+          const current = get().chatBg;
+          if (bg && typeof bg.at === 'number' && (!current || bg.at > current.at)) {
+            storeBackground(bg);
+            set({ chatBg: bg });
+            const previousUrl = get().chatBgUrl;
+            if (bg.id !== 'custom') {
+              set({ chatBgUrl: null });
+              if (previousUrl) URL.revokeObjectURL(previousUrl);
+            } else {
+              void ensureWallpaperUrl(bg, connectionId).then((url) => {
+                set({ chatBgUrl: url });
+                if (previousUrl && previousUrl !== url) URL.revokeObjectURL(previousUrl);
+              });
+            }
+          }
+        }
+      }
+      if (newestPeerRead > (get().connectionReadAt[connectionId] ?? 0)) {
+        // flip our delivered/sent messages in this connection to 'read'
+        set((s) => ({
+          connectionReadAt: { ...s.connectionReadAt, [connectionId]: newestPeerRead },
+          messages: s.messages.map((m) => {
+            if (m.senderId !== 'me' || m.channelId !== connectionId) return m;
+            if (m.status !== 'sent' && m.status !== 'delivered') return m;
+            if (m.sentAt > newestPeerRead) return m;
+            const next = { ...m, status: 'read' as const };
+            void putMessage(next);
+            return next;
+          }),
+        }));
+      }
+      if (cursor > since) localStorage.setItem(cursorKey, String(cursor));
+    } catch {
+      // offline — retry next poll
+    }
+  },
+
+  hydrateAccount: async () => {
+    if (!persistent || get().hydrated || !isLoggedIn()) return;
+    const [cached, channels, blobs] = await Promise.all([
+      loadMessages(),
+      loadChannels(),
+      loadBlobs(),
+    ]);
+    set({
+      messages: cached.map((m) => {
+        const withChannel = m.channelId ? m : { ...m, channelId: DM_CHANNEL_ID };
+        const blob = m.media ? blobs.get(m.id) : undefined;
+        return blob
+          ? { ...withChannel, media: { ...m.media!, url: URL.createObjectURL(blob) } }
+          : withChannel;
+      }),
+      channels: channels.sort((a, b) => a.createdAt - b.createdAt),
+      hydrated: true,
+    });
+    void get().syncConnections();
+  },
+
+  shareChannelWithConnection: (channelId, connectionId) => {
+    const channel = get().channels.find((c) => c.id === channelId);
+    if (!channel || channel.kind === 'dm') return;
+    const shared: Channel = { ...channel, shared: true, sharedConnId: connectionId };
+    set((s) => ({ channels: s.channels.map((c) => (c.id === channelId ? shared : c)) }));
+    if (!persistent) return;
+    void putChannel(shared);
+    // back up the channel + its current items so the peer gets full history
+    void uploadConvLocal(connectionId, `ch:${channelId}`, shared);
+    for (const m of get().messages) {
+      if (m.channelId === channelId) void uploadConvLocal(connectionId, `msg:${m.id}`, m);
+    }
+  },
+
+  syncConvLocal: async (connectionId) => {
+    if (!persistent || !connectionId) return;
+    const cursorKey = `rei-conv-local-cursor:${connectionId}`;
+    const since = readNum(cursorKey);
+    try {
+      const { rows, cursor } = await fetchConvLocal(connectionId, since);
+      for (const row of rows) {
+        if (row.key.startsWith('ch:')) {
+          const id = row.key.slice('ch:'.length);
+          if (row.value === null) {
+            set((s) => ({
+              channels: s.channels.filter((c) => c.id !== id),
+              messages: s.messages.filter((m) => m.channelId !== id),
+            }));
+            void dbDeleteChannel(id);
+            void deleteMessagesForChannel(id);
+          } else {
+            // auto-adopt: a connected account sharing a channel is trusted, so
+            // it appears directly (no separate accept step)
+            const channel = { ...(row.value as Channel), shared: true, sharedConnId: connectionId };
+            set((s) => ({
+              channels: [...s.channels.filter((c) => c.id !== channel.id), channel].sort(
+                (a, b) => a.createdAt - b.createdAt,
+              ),
+            }));
+            void putChannel(channel);
+          }
+        } else if (row.key.startsWith('msg:')) {
+          const id = row.key.slice('msg:'.length);
+          if (row.value === null) {
+            set((s) => ({ messages: s.messages.filter((m) => m.id !== id) }));
+            void deleteMessage(id);
+          } else {
+            const message = row.value as Message;
+            // only apply once we've adopted the parent channel
+            if (!isSharedChannelId(get().channels, message.channelId)) continue;
+            set((s) => ({ messages: sortedUpsert(s.messages, message) }));
+            void putMessage(message);
+          }
+        }
+      }
+      if (cursor > since) localStorage.setItem(cursorKey, String(cursor));
+    } catch {
+      // offline — retry next poll
+    }
+  },
+
+  markReadConnection: (connectionId) => {
+    if (!persistent || !connectionId) return;
+    const newest = get().messages.reduce(
+      (max, m) => (m.channelId === connectionId && m.sentAt > max ? m.sentAt : max),
+      0,
+    );
+    const dedupeKey = `rei-conv-myread:${connectionId}`;
+    if (newest <= readNum(dedupeKey)) return;
+    localStorage.setItem(dedupeKey, String(newest));
+    void uploadConvMeta(connectionId, 'read', { at: newest });
   },
 }));
