@@ -98,6 +98,9 @@ export interface Message {
 
 export type Screen =
   | 'lock'
+  | 'sign-in'
+  | 'set-password'
+  | 'admin'
   | 'profile-setup'
   | 'pairing'
   | 'home'

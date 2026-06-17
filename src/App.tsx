@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
+import { AdminScreen } from '@/features/admin/AdminScreen';
+import { SignInScreen } from '@/features/auth/SignInScreen';
+import { SetPasswordScreen } from '@/features/auth/SetPasswordScreen';
 import { CallScreen } from '@/features/call/CallScreen';
 import { ChatScreen } from '@/features/chat/ChatScreen';
 import { ChatDetailsScreen } from '@/features/chat/ChatDetailsScreen';
@@ -17,6 +20,7 @@ import {
     stopPeerService,
 } from '@/lib/peer-service';
 import { isPaired, SIGNAL_URL } from '@/lib/config';
+import { getAccount, isLoggedIn } from '@/lib/session';
 import { isUnlockFresh, touchUnlock } from '@/lib/pin';
 import { syncTodoReminders } from '@/lib/todo-reminders';
 import { setupPWAUpdates } from '@/lib/pwa-update';
@@ -25,17 +29,48 @@ import { useChatStore } from '@/store/chat-store';
 import { useCallStore } from '@/store/call-store';
 import { useVoiceRoomStore } from '@/store/voice-room-store';
 import { Headphones, PhoneOff, ShieldX } from 'lucide-react';
-import { DM_CHANNEL_ID, type Screen } from '@/lib/types';
+import { DM_CHANNEL_ID, type Profile, type Screen } from '@/lib/types';
 
 // read once at boot, then clean the hash so the code isn't left in the URL
 const initialJoinCode = joinCodeFromUrl();
 if (initialJoinCode) history.replaceState(null, '', location.pathname);
 
+// /admin is reachable directly (path `/admin` or hash `#admin`) for account
+// management.
+const ADMIN_ROUTE =
+    location.hash.replace('#', '') === 'admin' ||
+    location.pathname.replace(/\/+$/, '').endsWith('/admin');
+
+/** accounts mode: a real server is configured → email/password accounts.
+ *  Mock mode (no SIGNAL_URL) keeps the legacy profile/pairing flow. */
+function accountsMode(): boolean {
+    return Boolean(SIGNAL_URL);
+}
+
+/** where to land once unlocked (post-PIN), per auth state */
+function landingScreen(): Screen {
+    if (accountsMode()) {
+        if (!isLoggedIn()) return 'sign-in';
+        return 'home';
+    }
+    // legacy mock mode (no server): profile + pairing
+    if (!useChatStore.getState().myProfile) return 'profile-setup';
+    return isPaired() ? 'home' : 'pairing';
+}
+
 /** where to land at boot: skip the lock screen if still within the grace window */
 function bootScreen(): Screen {
+    if (ADMIN_ROUTE) return 'admin';
     if (!isUnlockFresh()) return 'lock';
-    if (!useChatStore.getState().myProfile) return 'profile-setup';
-    return isPaired() || !SIGNAL_URL ? 'home' : 'pairing';
+    return landingScreen();
+}
+
+/** derive a usable Profile from the signed-in account so the app can render
+ *  without the legacy profile-setup step (accounts carry the display name). */
+function profileFromAccount(): Profile | null {
+    const a = getAccount();
+    if (!a) return null;
+    return { name: a.displayName || a.username, color: '#b03a6e', avatar: a.avatar ?? undefined };
 }
 
 export default function App() {
@@ -60,6 +95,15 @@ export default function App() {
     // register the service-worker update prompt + report our build to the DB
     useEffect(() => {
         setupPWAUpdates();
+    }, []);
+
+    // accounts mode: restore the profile from the signed-in account on reload
+    // (so `home` renders without the legacy profile-setup step)
+    useEffect(() => {
+        if (accountsMode() && isLoggedIn() && !useChatStore.getState().myProfile) {
+            const p = profileFromAccount();
+            if (p) setMyProfile(p);
+        }
     }, []);
 
     // device-membership lock: the room admits only its two devices. Claim our
@@ -175,14 +219,47 @@ export default function App() {
                             <PinScreen
                                 onUnlock={() => {
                                     touchUnlock();
-                                    myProfile
-                                        ? afterProfile()
-                                        : setScreen('profile-setup');
+                                    setScreen(landingScreen());
                                 }}
                             />
                         </motion.div>
                     )}
                 </AnimatePresence>
+
+                {screen === 'admin' && (
+                    <div className='absolute inset-0 z-40 bg-background'>
+                        <AdminScreen onBack={() => { location.hash = ''; setScreen(bootScreen()); }} />
+                    </div>
+                )}
+
+                {screen === 'sign-in' && (
+                    <div className='absolute inset-0 z-40 bg-background'>
+                        <SignInScreen
+                            onSignedIn={(mustSetPassword) => {
+                                if (mustSetPassword) {
+                                    setScreen('set-password');
+                                    return;
+                                }
+                                const p = profileFromAccount();
+                                if (p) setMyProfile(p);
+                                setScreen('home');
+                            }}
+                            onOpenAdmin={() => setScreen('admin')}
+                        />
+                    </div>
+                )}
+
+                {screen === 'set-password' && (
+                    <div className='absolute inset-0 z-40 bg-background'>
+                        <SetPasswordScreen
+                            onDone={() => {
+                                const p = profileFromAccount();
+                                if (p) setMyProfile(p);
+                                setScreen('home');
+                            }}
+                        />
+                    </div>
+                )}
 
                 {screen === 'profile-setup' && (
                     <ProfileSetupScreen
