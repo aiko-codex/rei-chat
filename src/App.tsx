@@ -282,7 +282,6 @@ export default function App() {
                                 if (p) setMyProfile(p);
                                 setScreen('home');
                             }}
-                            onOpenAdmin={() => setScreen('admin')}
                         />
                     </div>
                 )}
