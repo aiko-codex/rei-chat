@@ -234,6 +234,9 @@ interface MessageBubbleProps {
   onDoubleTapReact?: (message: Message) => void;
   /** swipe right on the bubble to quick-reply (iMessage convention) */
   onSwipeReply?: (message: Message) => void;
+  /** play the spring "pop" entrance — only for genuinely new messages, not for
+   *  older rows re-mounted by windowed scrolling / jump-to-quote */
+  animateIn?: boolean;
 }
 
 /** drag distance (px) past which releasing fires a reply */
@@ -252,6 +255,7 @@ export function MessageBubble({
   onRetry,
   onDoubleTapReact,
   onSwipeReply,
+  animateIn = true,
 }: MessageBubbleProps) {
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
@@ -327,8 +331,9 @@ export function MessageBubble({
   return (
     <motion.div
       // send/receive: spring scale-and-fade in (not a linear slide) — gives the
-      // sent bubble a tactile "pop" as it lands
-      initial={{ opacity: 0, scale: 0.85, y: 8 }}
+      // sent bubble a tactile "pop" as it lands. Older rows that re-mount during
+      // windowed scrolling skip the entrance (animateIn=false) so they don't pop.
+      initial={animateIn ? { opacity: 0, scale: 0.85, y: 8 } : false}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 520, damping: 30, mass: 0.7 }}
       className={cn(

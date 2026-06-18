@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Hash, Heart, LockKeyhole } from 'lucide-react';
 import { toast } from 'sonner';
 import { ChatHeader } from './ChatHeader';
@@ -79,8 +79,14 @@ export function ChatScreen({
     const [editTarget, setEditTarget] = useState<Message | null>(null);
     const [lightboxTarget, setLightboxTarget] = useState<Message | null>(null);
 
-    const messages = allMessages.filter(
-        (m) => (m.channelId ?? DM_CHANNEL_ID) === channelId,
+    // memoized so background re-renders (peer typing, presence, the 1s poll)
+    // don't rebuild the array → MessageList only re-renders when messages change
+    const messages = useMemo(
+        () =>
+            allMessages.filter(
+                (m) => (m.channelId ?? DM_CHANNEL_ID) === channelId,
+            ),
+        [allMessages, channelId],
     );
     const channel = channels.find((c) => c.id === channelId);
 

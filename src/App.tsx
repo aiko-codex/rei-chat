@@ -33,6 +33,37 @@ import { useVoiceRoomStore } from '@/store/voice-room-store';
 import { Headphones, PhoneOff, ShieldX } from 'lucide-react';
 import { DM_CHANNEL_ID, type Profile, type Screen } from '@/lib/types';
 
+/**
+ * iOS-style push transition for secondary screens: slides in from the right on
+ * enter and back out on exit (matching the chat overlay), instead of popping in
+ * instantly. AnimatePresence keeps the node mounted through the exit slide.
+ */
+function SlideScreen({
+    show,
+    z = 'z-10',
+    children,
+}: {
+    show: boolean;
+    z?: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <AnimatePresence>
+            {show && (
+                <motion.div
+                    className={`absolute inset-0 ${z} bg-background`}
+                    initial={{ x: '100%' }}
+                    animate={{ x: 0 }}
+                    exit={{ x: '100%' }}
+                    transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+                >
+                    {children}
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+}
+
 // read once at boot, then clean the hash so the code isn't left in the URL
 const initialJoinCode = joinCodeFromUrl();
 if (initialJoinCode) history.replaceState(null, '', location.pathname);
@@ -302,21 +333,19 @@ export default function App() {
                     </div>
                 )}
 
-                {screen === 'connections' && (
-                    <div className='absolute inset-0 z-10 bg-background'>
-                        <ConnectionsScreen
-                            onBack={() => setScreen('home')}
-                            onOpenConnection={(connectionId, account) => {
-                                useChatStore.getState().rememberConnectionPeer(connectionId, {
-                                    displayName: account.displayName,
-                                    username: account.username,
-                                    avatar: account.avatar,
-                                });
-                                openChannel(connectionId);
-                            }}
-                        />
-                    </div>
-                )}
+                <SlideScreen show={screen === 'connections'}>
+                    <ConnectionsScreen
+                        onBack={() => setScreen('home')}
+                        onOpenConnection={(connectionId, account) => {
+                            useChatStore.getState().rememberConnectionPeer(connectionId, {
+                                displayName: account.displayName,
+                                username: account.username,
+                                avatar: account.avatar,
+                            });
+                            openChannel(connectionId);
+                        }}
+                    />
+                </SlideScreen>
 
                 {screen === 'profile-setup' && (
                     <ProfileSetupScreen
@@ -395,37 +424,31 @@ export default function App() {
                     )}
                 </AnimatePresence>
 
-                {screen === 'chat-details' && (
-                    <div className='absolute inset-0 z-10 bg-background'>
-                        <ChatDetailsScreen
-                            channelId={activeChannel}
-                            onBack={() => setScreen('chat')}
-                            onJump={(id) => {
-                                setJump({ id, nonce: Date.now() });
-                                setScreen('chat');
-                            }}
-                        />
-                    </div>
-                )}
+                <SlideScreen show={screen === 'chat-details'}>
+                    <ChatDetailsScreen
+                        channelId={activeChannel}
+                        onBack={() => setScreen('chat')}
+                        onJump={(id) => {
+                            setJump({ id, nonce: Date.now() });
+                            setScreen('chat');
+                        }}
+                    />
+                </SlideScreen>
 
-                {screen === 'voice-channel' && (
-                    <div className='absolute inset-0 z-10 bg-background'>
-                        <VoiceChannelScreen onBack={() => setScreen('chat')} />
-                    </div>
-                )}
-                {screen === 'settings' && (
-                    <div className='absolute inset-0 z-10 bg-background'>
-                        <SettingsScreen onBack={() => setScreen('home')} />
-                    </div>
-                )}
-                {screen === 'notifications' && (
-                    <div className='absolute inset-0 z-10 bg-background'>
-                        <NotificationsScreen
-                            onBack={() => setScreen('home')}
-                            onOpenChannel={openChannel}
-                        />
-                    </div>
-                )}
+                <SlideScreen show={screen === 'voice-channel'}>
+                    <VoiceChannelScreen onBack={() => setScreen('chat')} />
+                </SlideScreen>
+
+                <SlideScreen show={screen === 'settings'}>
+                    <SettingsScreen onBack={() => setScreen('home')} />
+                </SlideScreen>
+
+                <SlideScreen show={screen === 'notifications'}>
+                    <NotificationsScreen
+                        onBack={() => setScreen('home')}
+                        onOpenChannel={openChannel}
+                    />
+                </SlideScreen>
                 {inVoiceRoom && screen !== 'voice-channel' && !inCall && (
                     <div className='absolute inset-x-0 top-0 z-[15] flex items-center gap-2 bg-emerald-600 px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-sm text-white'>
                         <Headphones className='size-4' />

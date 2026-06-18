@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
@@ -113,6 +113,10 @@ export function MessageList({
   jumpNonce,
 }: MessageListProps) {
   const displayName = useChatStore((s) => s.displayName);
+  // messages already present when the chat opened shouldn't replay the "pop"
+  // entrance if windowed scrolling re-mounts them — only ones that arrive after
+  // this timestamp animate in.
+  const mountedAt = useRef(Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
@@ -154,6 +158,31 @@ export function MessageList({
     const el = containerRef.current;
     if (!el) return true;
     return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+  };
+
+  // rAF-coalesced scroll handling: the raw `scroll` event fires dozens of times
+  // per touch-scroll. We batch it into one layout read per frame and only act on
+  // state transitions, so a fast scroll doesn't thrash layout or spam the
+  // onViewedBottom callback (which hits the network in connection mode).
+  const scrollScheduled = useRef(false);
+  const wasNearBottom = useRef(true);
+  const handleScroll = () => {
+    if (scrollScheduled.current) return;
+    scrollScheduled.current = true;
+    requestAnimationFrame(() => {
+      scrollScheduled.current = false;
+      const el = containerRef.current;
+      if (!el) return;
+      const { scrollHeight, scrollTop, clientHeight } = el; // single batched read
+      if (scrollTop < LOAD_MORE_PX) loadOlder();
+      const near = scrollHeight - scrollTop - clientHeight < NEAR_BOTTOM_PX;
+      if (near) {
+        if (unseenBelow > 0) setUnseenBelow(0);
+        // fire only on the transition into near-bottom, not every frame
+        if (!wasNearBottom.current) notifyViewedBottom();
+      }
+      wasNearBottom.current = near;
+    });
   };
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
@@ -230,8 +259,18 @@ export function MessageList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jumpNonce]);
 
-  const byId = new Map(messages.map((m) => [m.id, m]));
-  const byIndex = new Map(messages.map((m, i) => [m.id, i]));
+  // these maps are O(n) over the FULL history; rebuilding them on every render
+  // (incl. every scroll-driven state update) was a real jank source on long
+  // chats — memoize so they only recompute when the message set changes.
+  const { byId, byIndex } = useMemo(() => {
+    const id = new Map<string, Message>();
+    const idx = new Map<string, number>();
+    messages.forEach((m, i) => {
+      id.set(m.id, m);
+      idx.set(m.id, i);
+    });
+    return { byId: id, byIndex: idx };
+  }, [messages]);
 
   // only render the tail window; older rows mount as the user scrolls up
   const startIndex = Math.max(0, messages.length - visibleCount);
@@ -239,27 +278,18 @@ export function MessageList({
 
   // iMessage-style status word ("Sent"/"Delivered"/"Seen") shows under the
   // most-recent outgoing message only, not on every bubble.
-  let lastOwnId: string | undefined;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].senderId === currentUserId) {
-      lastOwnId = messages[i].id;
-      break;
+  const lastOwnId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].senderId === currentUserId) return messages[i].id;
     }
-  }
+    return undefined;
+  }, [messages, currentUserId]);
 
   return (
     <div className="relative min-h-0 flex-1" style={backgroundStyle}>
       <div
         ref={containerRef}
-        onScroll={() => {
-          const el = containerRef.current;
-          if (el && el.scrollTop < LOAD_MORE_PX) loadOlder();
-          if (isNearBottom()) {
-            if (unseenBelow > 0) setUnseenBelow(0);
-            // scrolled down to the latest → mark as seen
-            notifyViewedBottom();
-          }
-        }}
+        onScroll={handleScroll}
         className="h-full overflow-y-auto px-4 py-3"
         data-testid="message-list"
       >
@@ -309,6 +339,7 @@ export function MessageList({
                 onRetry={onRetry}
                 onDoubleTapReact={onDoubleTapReact}
                 onSwipeReply={onSwipeReply}
+                animateIn={msg.sentAt > mountedAt.current}
               />
             </div>
           );
