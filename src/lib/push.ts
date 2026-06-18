@@ -139,11 +139,18 @@ export interface PushTestResult {
 export async function sendTestPush(): Promise<PushTestResult> {
     if (!SIGNAL_URL) return { ok: false, sent: 0, reason: 'no server configured' };
     try {
-        const res = await fetch(`${SIGNAL_URL}?action=push_test`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ room: getRoomId(), deviceId: getDeviceId() }),
-        });
+        // accounts mode: test against the account (token); else the legacy room
+        const res = isLoggedIn()
+            ? await fetch(`${SIGNAL_URL}?action=c_push_test`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ token: getToken() }),
+              })
+            : await fetch(`${SIGNAL_URL}?action=push_test`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ room: getRoomId(), deviceId: getDeviceId() }),
+              });
         if (!res.ok) return { ok: false, sent: 0, reason: `server ${res.status}` };
         return (await res.json()) as PushTestResult;
     } catch {
