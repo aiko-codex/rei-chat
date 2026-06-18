@@ -25,6 +25,7 @@ import { getAccount, hasStoredKeys, isLoggedIn, mustSetPassword } from '@/lib/se
 import { isUnlockFresh, touchUnlock } from '@/lib/pin';
 import { syncTodoReminders } from '@/lib/todo-reminders';
 import { setupPWAUpdates } from '@/lib/pwa-update';
+import { ensurePushRegistered } from '@/lib/push';
 import { joinCodeFromUrl } from '@/lib/pairing';
 import { useChatStore } from '@/store/chat-store';
 import { useCallStore } from '@/store/call-store';
@@ -122,6 +123,9 @@ export default function App() {
     useEffect(() => {
         if (!unlocked || !accountsMode() || !isLoggedIn()) return;
         void useChatStore.getState().hydrateAccount();
+        // re-establish the push subscription if the user opted in previously
+        // (iOS PWAs can drop it between launches → settings kept asking to enable)
+        void ensurePushRegistered();
     }, [unlocked]);
 
     // accounts mode: poll the connection list so incoming requests + new

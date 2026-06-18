@@ -39,15 +39,57 @@ export function notificationPermission(): NotificationPermission {
     return 'Notification' in window ? Notification.permission : 'denied';
 }
 
-/** Is this device currently subscribed? */
+/** localStorage flag: the user opted into push and wants it kept alive. */
+const PUSH_OPTIN_KEY = 'rei-push-optin';
+
+function setPushOptIn(on: boolean): void {
+    try {
+        if (on) localStorage.setItem(PUSH_OPTIN_KEY, '1');
+        else localStorage.removeItem(PUSH_OPTIN_KEY);
+    } catch {
+        // ignore
+    }
+}
+
+function wantsPush(): boolean {
+    try {
+        return localStorage.getItem(PUSH_OPTIN_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Is this device currently subscribed? Treats "opted in + permission granted"
+ * as enabled even if the browser dropped the subscription object between app
+ * launches (common on iOS PWAs) — `ensurePushRegistered()` re-creates it on
+ * boot, so the settings UI shouldn't keep asking the user to re-enable.
+ */
 export async function isPushEnabled(): Promise<boolean> {
     if (!pushSupported()) return false;
     try {
         const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
-        return Boolean(sub);
+        if (sub) return true;
+        return wantsPush() && notificationPermission() === 'granted';
     } catch {
-        return false;
+        return wantsPush() && notificationPermission() === 'granted';
+    }
+}
+
+/**
+ * Called on app boot: if the user previously opted into push and the OS
+ * permission is still granted, silently re-subscribe and re-register with the
+ * server so notifications survive app restarts (no UI, best effort).
+ */
+export async function ensurePushRegistered(): Promise<void> {
+    if (!pushSupported()) return;
+    if (!wantsPush()) return;
+    if (notificationPermission() !== 'granted') return;
+    try {
+        await enablePush();
+    } catch {
+        // best effort
     }
 }
 
@@ -77,6 +119,7 @@ export async function enablePush(): Promise<boolean> {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token: getToken(), sub: sub.toJSON() }),
             });
+            if (res.ok) setPushOptIn(true);
             return res.ok;
         }
         const res = await fetch(`${SIGNAL_URL}?action=push_subscribe`, {
@@ -88,6 +131,7 @@ export async function enablePush(): Promise<boolean> {
                 sub: sub.toJSON(),
             }),
         });
+        if (res.ok) setPushOptIn(true);
         return res.ok;
     } catch {
         return false;
@@ -96,6 +140,7 @@ export async function enablePush(): Promise<boolean> {
 
 /** Unsubscribe locally and drop the subscription on the server. */
 export async function disablePush(): Promise<void> {
+    setPushOptIn(false);
     if (!('serviceWorker' in navigator)) return;
     try {
         const reg = await navigator.serviceWorker.ready;
