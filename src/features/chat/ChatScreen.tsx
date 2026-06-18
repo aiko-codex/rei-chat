@@ -314,6 +314,30 @@ export function ChatScreen({
         setReplyTarget(null);
     };
 
+    // remote media (Tenor GIF/sticker): no blob, no encrypted upload — the
+    // public url rides the normal message frame exactly like text. `remote:true`
+    // on the attachment keeps the sync layer from trying to download/back it up.
+    const sendRemoteMedia = (media: MediaAttachment) => {
+        const message: Message = {
+            id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            channelId,
+            senderId: currentUserId,
+            media,
+            sentAt: Date.now(),
+            status: 'sent',
+            replyToId: replyTarget?.id,
+        };
+        upsert(message);
+        if (isConnection) {
+            sendPeerMessage(message);
+            void storeConv(message);
+        } else if (isDm) {
+            sendPeerMessage(message);
+            if (SIGNAL_URL) void storeOnServer(message);
+        }
+        setReplyTarget(null);
+    };
+
     const react = (emoji: string) => {
         if (!actionTarget) return;
         // tapping the same emoji again removes your reaction
@@ -545,6 +569,7 @@ export function ChatScreen({
             <Composer
                 onSend={send}
                 onSendMedia={sendMedia}
+                onSendRemoteMedia={sendRemoteMedia}
                 onTyping={isDm ? sendPeerTyping : isConnection ? sendConnTyping : undefined}
                 replyTo={replyTarget}
                 replyToName={

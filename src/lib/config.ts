@@ -13,6 +13,14 @@ export const SIGNAL_URL: string = import.meta.env.VITE_SIGNAL_URL ?? '';
  */
 export const VAPID_PUBLIC_KEY: string = import.meta.env.VITE_VAPID_PUBLIC_KEY ?? '';
 
+/**
+ * Giphy API key for the GIF + sticker picker (Tenor stopped issuing new clients
+ * Jan 2026). Free from https://developers.giphy.com/. Empty = the GIF/sticker
+ * buttons stay hidden. Only the search text + your IP reach Giphy; personal
+ * media never touches it.
+ */
+export const GIPHY_KEY: string = import.meta.env.VITE_GIPHY_KEY ?? '';
+
 import { getPairing } from './pairing';
 
 /**

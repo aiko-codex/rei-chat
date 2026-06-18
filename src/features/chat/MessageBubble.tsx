@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform } from 'motion/react';
-import { Check, CheckCheck, CircleAlert, FileIcon, ImageIcon, Mic, Pause, Play, Reply, Video } from 'lucide-react';
+import { Check, CheckCheck, CircleAlert, FileIcon, ImageIcon, MapPin, Mic, Pause, Play, Reply, Video } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
 import { useChatStore } from '@/store/chat-store';
@@ -126,6 +126,42 @@ function MediaContent({
     );
   }
   if (media.kind === 'image') {
+    // stickers / drawn doodles: transparent, frameless, small, not zoomable
+    if (media.sticker) {
+      return (
+        <img
+          src={media.url}
+          alt={media.name}
+          className="max-h-40 w-auto max-w-[60%] object-contain"
+          data-testid="media-sticker"
+        />
+      );
+    }
+    // shared location: the encrypted map snapshot + an "Open in Maps" action
+    if (media.coords) {
+      const { lat, lng } = media.coords;
+      const mapsUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`;
+      return (
+        <span className="relative block overflow-hidden rounded-2xl ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15">
+          <img
+            src={media.url}
+            alt="Shared location"
+            onClick={onOpenImage}
+            className="max-h-80 w-full cursor-pointer object-cover"
+            data-testid="media-location"
+          />
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm [&_svg]:size-3.5"
+          >
+            <MapPin /> Open in Maps
+          </a>
+        </span>
+      );
+    }
     return (
       <img
         src={media.url}
@@ -190,6 +226,8 @@ function MediaContent({
 
 function quoteSnippet(m: Message) {
   if (m.text) return m.text;
+  if (m.media?.coords) return 'Location';
+  if (m.media?.sticker) return 'Sticker';
   switch (m.media?.kind) {
     case 'image':
       return 'Photo';

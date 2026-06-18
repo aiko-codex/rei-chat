@@ -1,11 +1,37 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, ImagePlus, Mic, Pencil, SendHorizontal, X } from 'lucide-react';
+import {
+    Check,
+    Image as ImageIcon,
+    MapPin,
+    Mic,
+    Pencil,
+    Plus,
+    SendHorizontal,
+    Smile,
+    X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { VoiceRecorderModal } from './VoiceRecorderModal';
+// lazy: keeps Tenor/leaflet/sketch-canvas out of the initial bundle — they only
+// load when the user actually opens that picker
+const GifStickerPicker = lazy(() =>
+    import('./GifStickerPicker').then((m) => ({ default: m.GifStickerPicker })),
+);
+const DrawModal = lazy(() =>
+    import('./DrawModal').then((m) => ({ default: m.DrawModal })),
+);
+const LocationModal = lazy(() =>
+    import('./LocationModal').then((m) => ({ default: m.LocationModal })),
+);
+import { gifProviderEnabled } from '@/lib/giphy';
 import type { MediaAttachment, Message } from '@/lib/types';
+
+/** which attachment sheet is open (null = none) */
+type AttachSheet = 'gif' | 'sticker' | 'draw' | 'location' | null;
 
 function mediaKindFor(file: File): MediaAttachment['kind'] {
     if (file.type.startsWith('image/')) return 'image';
@@ -30,6 +56,8 @@ function replySnippet(m: Message) {
 interface ComposerProps {
     onSend: (text: string) => void;
     onSendMedia: (media: MediaAttachment, blob: Blob) => void;
+    /** remote (Tenor) media — no blob, the url rides the message frame as-is */
+    onSendRemoteMedia: (media: MediaAttachment) => void;
     /** typing feedback for the peer; throttling happens upstream */
     onTyping?: (typing: boolean) => void;
     replyTo: Message | null;
@@ -44,6 +72,7 @@ interface ComposerProps {
 export function Composer({
     onSend,
     onSendMedia,
+    onSendRemoteMedia,
     onTyping,
     replyTo,
     replyToName,
@@ -58,6 +87,14 @@ export function Composer({
 
     // voice note recording happens in a modal (tap to open, no hold gesture)
     const [voiceOpen, setVoiceOpen] = useState(false);
+    // the "+" attachment menu + which picker sheet it opened
+    const [attachOpen, setAttachOpen] = useState(false);
+    const [sheet, setSheet] = useState<AttachSheet>(null);
+
+    const openSheet = (s: Exclude<AttachSheet, null>) => {
+        setAttachOpen(false);
+        setSheet(s);
+    };
 
     useEffect(() => {
         if (replyTo) textInputRef.current?.focus();
@@ -192,16 +229,62 @@ export function Composer({
                     data-testid='file-input'
                 />
 
-                <Button
-                    variant='ghost'
-                    size='icon'
-                    className='cursor-pointer'
-                    onClick={() => fileInputRef.current?.click()}
-                    aria-label='Attach media'
-                    data-testid='attach-btn'
-                >
-                    <ImagePlus />
-                </Button>
+                <Popover open={attachOpen} onOpenChange={setAttachOpen}>
+                    <PopoverTrigger asChild>
+                        <Button
+                            variant='ghost'
+                            size='icon'
+                            className='cursor-pointer'
+                            aria-label='Attach'
+                            data-testid='attach-btn'
+                        >
+                            <Plus />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                        align='start'
+                        side='top'
+                        className='w-48 rounded-2xl p-1.5'
+                    >
+                        <AttachRow
+                            icon={<ImageIcon />}
+                            label='Photo / Video'
+                            onClick={() => {
+                                setAttachOpen(false);
+                                fileInputRef.current?.click();
+                            }}
+                            testid='attach-photo'
+                        />
+                        {gifProviderEnabled() && (
+                            <>
+                                <AttachRow
+                                    icon={<GifGlyph />}
+                                    label='GIFs'
+                                    onClick={() => openSheet('gif')}
+                                    testid='attach-gif'
+                                />
+                                <AttachRow
+                                    icon={<Smile />}
+                                    label='Stickers'
+                                    onClick={() => openSheet('sticker')}
+                                    testid='attach-sticker'
+                                />
+                            </>
+                        )}
+                        <AttachRow
+                            icon={<Pencil />}
+                            label='Draw'
+                            onClick={() => openSheet('draw')}
+                            testid='attach-draw'
+                        />
+                        <AttachRow
+                            icon={<MapPin />}
+                            label='Location'
+                            onClick={() => openSheet('location')}
+                            testid='attach-location'
+                        />
+                    </PopoverContent>
+                </Popover>
                 <Input
                     ref={textInputRef}
                     value={text}
@@ -258,6 +341,55 @@ export function Composer({
                 onClose={() => setVoiceOpen(false)}
                 onSend={onSendMedia}
             />
+            <Suspense fallback={null}>
+                {(sheet === 'gif' || sheet === 'sticker') && (
+                    <GifStickerPicker
+                        open
+                        sticker={sheet === 'sticker'}
+                        onClose={() => setSheet(null)}
+                        onPick={onSendRemoteMedia}
+                    />
+                )}
+                {sheet === 'draw' && (
+                    <DrawModal open onClose={() => setSheet(null)} onSend={onSendMedia} />
+                )}
+                {sheet === 'location' && (
+                    <LocationModal open onClose={() => setSheet(null)} onSend={onSendMedia} />
+                )}
+            </Suspense>
         </footer>
+    );
+}
+
+/** a single row in the "+" attachment menu */
+function AttachRow({
+    icon,
+    label,
+    onClick,
+    testid,
+}: {
+    icon: React.ReactNode;
+    label: string;
+    onClick: () => void;
+    testid: string;
+}) {
+    return (
+        <button
+            onClick={onClick}
+            data-testid={testid}
+            className='flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition active:bg-muted hover:bg-muted [&_svg]:size-[18px] [&_svg]:text-foreground/70'
+        >
+            {icon}
+            {label}
+        </button>
+    );
+}
+
+/** a small "GIF" badge glyph (lucide has no gif icon) */
+function GifGlyph() {
+    return (
+        <span className='flex h-[18px] w-[22px] items-center justify-center rounded border border-foreground/60 text-[8px] font-bold leading-none text-foreground/70'>
+            GIF
+        </span>
     );
 }

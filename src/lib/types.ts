@@ -20,6 +20,14 @@ export interface MediaAttachment {
   mimeType: string;
   /** voice notes / videos, in seconds */
   duration?: number;
+  /** the url is a public remote link (e.g. a Tenor GIF) — never uploaded,
+   *  downloaded, or backed up as an encrypted blob; it rides the message frame
+   *  as-is like text. */
+  remote?: boolean;
+  /** render frameless + small (transparent Tenor sticker / drawn doodle) */
+  sticker?: boolean;
+  /** shared-location messages: render an "Open in Maps" action over the image */
+  coords?: { lat: number; lng: number };
 }
 
 /** per-device profile, set by each user on their own device and exchanged
