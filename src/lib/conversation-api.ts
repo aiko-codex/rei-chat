@@ -50,10 +50,13 @@ interface HistoryRow {
 export async function uploadConvMessage(connectionId: string, message: Message): Promise<boolean> {
   try {
     const key = await convKey(connectionId);
-    // never persist a local object URL — media bytes ride media_upload
-    const onWire: Message = message.media
-      ? { ...message, media: { ...message.media, url: '' } }
-      : message;
+    // never persist a local object URL — media bytes ride media_upload. EXCEPT
+    // remote media (e.g. a Giphy GIF/sticker): its url is a public CDN link with
+    // no uploaded bytes, so it must survive the round-trip or it can't render.
+    const onWire: Message =
+      message.media && !message.media.remote
+        ? { ...message, media: { ...message.media, url: '' } }
+        : message;
     const res = await fetch(`${SIGNAL_URL}?action=c_store`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

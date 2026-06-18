@@ -366,7 +366,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
     // media rows with no local blob yet (failed/unfinished restore) — backfill
     for (const m of cached) {
-      if (m.media && !blobs.has(m.id)) void ensureMediaBlob({ ...m, media: { ...m.media, url: '' } });
+      // remote media (Giphy etc.) has no bytes to restore — its url is the asset
+      if (m.media && !m.media.remote && !blobs.has(m.id))
+        void ensureMediaBlob({ ...m, media: { ...m.media, url: '' } });
     }
     // rebuild the custom wallpaper object URL (object URLs die on reload)
     void ensureWallpaperUrl(get().chatBg).then((url) => {
@@ -996,7 +998,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         get().upsert(local);
         if (persistent) void putMessage(local);
         // media rows arrive with an empty url — pull + decrypt the bytes
-        if (local.media && !local.media.url) {
+        // (remote media has no bytes; its url is the public asset, keep it)
+        if (local.media && !local.media.url && !local.media.remote) {
           void (async () => {
             const existing = await getBlob(local.id);
             const blob =
