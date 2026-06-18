@@ -479,7 +479,10 @@ export function MessageBubble({
           // sits in a clean cut-out at the bubble's bottom edge: the ring is the
           // chat-background colour, carving an "invisible border" around it
           // (Instagram style) so the emoji reads as attached to the bubble
-          <span
+          <motion.span
+            initial={{ scale: 0, opacity: 0, y: -8 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 200, damping: 18, mass: 0.4 }}
             className={cn(
               'absolute -bottom-3 flex items-center gap-0.5 rounded-full bg-background px-1 py-0.5 text-[15px] leading-none shadow-sm ring-2 ring-background',
               isMine ? 'right-1.5' : 'left-1.5',
@@ -487,7 +490,7 @@ export function MessageBubble({
             data-testid={`reactions-${message.id}`}
           >
             {reactions.join('')}
-          </span>
+          </motion.span>
         )}
       </div>
         {isMine && message.status === 'failed' && (
