@@ -71,6 +71,7 @@ export function ChatScreen({
     const chatBgUrl = useChatStore((s) => s.chatBgUrl);
     const upsert = useChatStore((s) => s.upsert);
     const setReaction = useChatStore((s) => s.setReaction);
+    const setMemory = useChatStore((s) => s.setMemory);
     const removeLocal = useChatStore((s) => s.remove);
     const markSeen = useChatStore((s) => s.markSeen);
 
@@ -389,6 +390,15 @@ export function ChatScreen({
         toast('Unsent');
     };
 
+    const pinMemory = () => {
+        if (!actionTarget) return;
+        const target = actionTarget;
+        const nowPinned = !target.pinned;
+        setMemory(target.id, nowPinned, target.memoryCaption);
+        setActionTarget(null);
+        toast(nowPinned ? 'Pinned to memories 🖤' : 'Removed from memories');
+    };
+
     const copyMessage = async () => {
         if (actionTarget?.text) {
             try {
@@ -592,6 +602,7 @@ export function ChatScreen({
                 onReply={reply}
                 onCopy={copyMessage}
                 onEdit={startEdit}
+                onPin={pinMemory}
                 onDeleteForMe={deleteForMe}
                 onUnsend={unsend}
             />

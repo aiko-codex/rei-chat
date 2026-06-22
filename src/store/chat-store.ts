@@ -214,6 +214,11 @@ interface ChatStore {
   /** apply a reaction to local state only — no server/P2P re-publish (used by
    *  the inbound P2P reaction frame and server overlay sync) */
   applyReactionLocal: (id: string, userId: UserId, emoji: string | undefined) => void;
+  /** pin/unpin a message into the shared Memories album (or edit its caption);
+   *  syncs to the peer via the encrypted meta overlay (key `pin:<id>`) */
+  setMemory: (id: string, pinned: boolean, caption?: string) => void;
+  /** apply a memory pin to local state only — no re-publish (used by overlay sync) */
+  applyMemoryLocal: (id: string, pinned: boolean, caption: string | undefined, at: number) => void;
   /** flip our sent messages in a connection to 'read' up to `at` (P2P receipt) */
   applyPeerReadAtConnection: (connectionId: string, at: number) => void;
   /** local removal only — callers decide about the server copy */
@@ -418,6 +423,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         } else if (row.key === 'read' && !row.mine) {
           const at = (row.value as { at?: number } | null)?.at ?? 0;
           if (at > newestPeerRead) newestPeerRead = at;
+        } else if (row.key.startsWith('pin:')) {
+          // shared Memories album — apply locally, last-writer-wins by `at`
+          const id = row.key.slice('pin:'.length);
+          const v = row.value as { c?: string | null; at?: number } | null;
+          const at = v?.at ?? Date.now();
+          const current = get().messages.find((m) => m.id === id);
+          if (current && Math.max(current.pinnedAt ?? 0, 0) <= at) {
+            get().applyMemoryLocal(id, !!v, v?.c ?? undefined, at);
+          }
         } else if (row.key === 'chat-bg') {
           // shared wallpaper — last-writer-wins by the embedded timestamp, so a
           // stale row (or our own echo) never clobbers a newer selection
@@ -754,6 +768,37 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (persistent && updated) void putMessage(updated);
   },
 
+  setMemory: (id, pinned, caption) => {
+    const at = Date.now();
+    get().applyMemoryLocal(id, pinned, caption, at);
+    const updated = get().messages.find((m) => m.id === id);
+    if (!persistent || !updated) return;
+    // DURABLE: publish to the encrypted overlay so the album syncs to her even
+    // while offline. null value = unpinned (a tombstone). Connection-keyed for
+    // accounts mode, room-keyed for the legacy DM.
+    const value = pinned ? { c: caption ?? null, at } : null;
+    const cid = updated.channelId;
+    if (cid && get().connectionPeers[cid]) {
+      void uploadConvMeta(cid, `pin:${id}`, value);
+    } else {
+      void uploadMeta(`pin:${id}`, value);
+    }
+  },
+
+  applyMemoryLocal: (id, pinned, caption, at) => {
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === id
+          ? pinned
+            ? { ...m, pinned: true, memoryCaption: caption || undefined, pinnedAt: at }
+            : { ...m, pinned: false, memoryCaption: undefined, pinnedAt: undefined }
+          : m,
+      ),
+    }));
+    const updated = get().messages.find((m) => m.id === id);
+    if (persistent && updated) void putMessage(updated);
+  },
+
   applyPeerReadAtConnection: (connectionId, at) => {
     if (at <= (get().connectionReadAt[connectionId] ?? 0)) return;
     set((s) => ({
@@ -1041,6 +1086,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         } else if (row.key === 'read' && !row.mine) {
           const at = (row.value as { at?: number } | null)?.at ?? 0;
           if (at > newestPeerRead) newestPeerRead = at;
+        } else if (row.key.startsWith('pin:')) {
+          // shared Memories album — apply without re-publishing (no upload loop);
+          // last-writer-wins by the embedded `at` so a stale row can't clobber
+          const id = row.key.slice('pin:'.length);
+          const v = row.value as { c?: string | null; at?: number } | null;
+          const at = v?.at ?? Date.now();
+          const current = get().messages.find((m) => m.id === id);
+          if (current && Math.max(current.pinnedAt ?? 0, 0) <= at) {
+            get().applyMemoryLocal(id, !!v, v?.c ?? undefined, at);
+          }
         } else if (row.key === 'chat-bg') {
           // shared wallpaper for this connection — last-writer-wins by the
           // embedded timestamp (a stale row / our own echo never clobbers a

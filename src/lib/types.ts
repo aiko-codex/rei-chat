@@ -93,6 +93,12 @@ export interface Message {
   replyToId?: string;
   /** true once the sender has edited the text after sending */
   edited?: boolean;
+  /** pinned into the shared "Memories" album (synced via the meta overlay) */
+  pinned?: boolean;
+  /** optional caption shown under this memory in the album */
+  memoryCaption?: string;
+  /** when it was pinned (epoch ms) — orders the album, newest first */
+  pinnedAt?: number;
   /** todo channels reuse message rows as items; checked state lives here */
   done?: boolean;
   /** todo: optional deadline (epoch ms) — drives the time progress bar */

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Copy, Pencil, Plus, Reply, Trash2, Undo2 } from 'lucide-react';
+import { Copy, Pencil, Pin, PinOff, Plus, Reply, Trash2, Undo2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/store/chat-store';
 import { ReactionEmojiSheet } from './ReactionEmojiSheet';
@@ -43,6 +43,7 @@ export interface MessageActionsProps {
   onReply: () => void;
   onCopy: () => void;
   onEdit: () => void;
+  onPin: () => void;
   onDeleteForMe: () => void;
   onUnsend: () => void;
 }
@@ -55,6 +56,7 @@ export function MessageActions({
   onReply,
   onCopy,
   onEdit,
+  onPin,
   onDeleteForMe,
   onUnsend,
 }: MessageActionsProps) {
@@ -78,6 +80,7 @@ export function MessageActions({
     else if (key === 'reply') onReply();
     else if (key === 'copy') onCopy();
     else if (key === 'edit') onEdit();
+    else if (key === 'pin') onPin();
     else if (key === 'delete') onDeleteForMe();
     else if (key === 'unsend') onUnsend();
   };
@@ -284,6 +287,14 @@ export function MessageActions({
                   testId="action-edit"
                 />
               )}
+              <ActionRow
+                icon={message.pinned ? <PinOff /> : <Pin />}
+                label={message.pinned ? 'Remove from memories' : 'Pin to memories'}
+                slideKey="pin"
+                hovered={hovered === 'pin'}
+                onClick={onPin}
+                testId="action-pin"
+              />
               <ActionRow
                 icon={<Trash2 />}
                 label="Delete for you"

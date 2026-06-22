@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronLeft, ChevronRight, Images, Palette, Search, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Heart, Images, Palette, Search, ShieldCheck } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/store/chat-store';
@@ -8,8 +8,9 @@ import { DM_CHANNEL_ID } from '@/lib/types';
 import { ChatSearchPanel } from './ChatSearchPanel';
 import { ChatThemePanel } from './ChatThemePanel';
 import { ChatGalleryPanel } from './ChatGalleryPanel';
+import { ChatMemoriesPanel } from './ChatMemoriesPanel';
 
-type Panel = 'search' | 'theme' | 'gallery';
+type Panel = 'search' | 'theme' | 'gallery' | 'memories';
 
 interface ChatDetailsScreenProps {
   onBack: () => void;
@@ -106,6 +107,13 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
             testId="details-theme"
           />
           <DetailRow
+            icon={<Heart className="size-5" />}
+            label="Memories"
+            hint="Photos & moments you both pinned"
+            onClick={() => setPanel('memories')}
+            testId="details-memories"
+          />
+          <DetailRow
             icon={<Images className="size-5" />}
             label="Media & links"
             hint="Photos, videos and links shared here"
@@ -137,6 +145,13 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
               <ChatThemePanel
                 onBack={() => setPanel(null)}
                 connectionId={isConnection ? channelId : null}
+              />
+            )}
+            {panel === 'memories' && (
+              <ChatMemoriesPanel
+                messages={convMessages}
+                onBack={() => setPanel(null)}
+                onJump={onJump}
               />
             )}
             {panel === 'gallery' && (
