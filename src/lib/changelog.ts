@@ -24,6 +24,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.4.0',
+    date: '2026-06-22',
+    title: 'Clean up your shared media',
+    changes: [
+      { kind: 'new', text: 'In a chat’s Media & links, tap “Select” to pick multiple photos, videos or links at once.' },
+      { kind: 'new', text: 'Delete the selected items just for you, or unsend them for both of you (also removed from the server).' },
+    ],
+  },
+  {
     version: '0.3.0',
     date: '2026-06-22',
     title: 'Shared memories',

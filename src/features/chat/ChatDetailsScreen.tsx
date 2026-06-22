@@ -1,10 +1,15 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, Heart, Images, Palette, Search, ShieldCheck } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/store/chat-store';
-import { DM_CHANNEL_ID } from '@/lib/types';
+import { SIGNAL_URL } from '@/lib/config';
+import { removeRemoteMessage } from '@/lib/message-api';
+import { removeConvMessage } from '@/lib/conversation-api';
+import { sendPeerRemove } from '@/lib/peer-service';
+import { DM_CHANNEL_ID, type Message } from '@/lib/types';
 import { ChatSearchPanel } from './ChatSearchPanel';
 import { ChatThemePanel } from './ChatThemePanel';
 import { ChatGalleryPanel } from './ChatGalleryPanel';
@@ -49,8 +54,11 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
   const peerProfile = useChatStore((s) => s.peerProfile);
   const connectionPeers = useChatStore((s) => s.connectionPeers);
   const allMessages = useChatStore((s) => s.messages);
+  const removeLocal = useChatStore((s) => s.remove);
+  const upsert = useChatStore((s) => s.upsert);
   const [panel, setPanel] = useState<Panel | null>(null);
 
+  const isDm = channelId === DM_CHANNEL_ID;
   const isConnection = channelId !== DM_CHANNEL_ID && Boolean(connectionPeers[channelId]);
   const connPeer = isConnection ? connectionPeers[channelId] : undefined;
 
@@ -58,6 +66,33 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
     () => allMessages.filter((m) => (m.channelId ?? DM_CHANNEL_ID) === channelId),
     [allMessages, channelId],
   );
+
+  // Bulk delete from the gallery. Mirrors ChatScreen's per-message paths:
+  // "for me" is local-only (with a 5s undo); "for everyone" removes our copy,
+  // the server copy, and fires the live P2P removal (best effort — the durable
+  // server delete is the reliable lane). Instant + irreversible (confirmed first).
+  const bulkDeleteForMe = (ids: string[]) => {
+    const removed = allMessages.filter((m) => ids.includes(m.id));
+    removed.forEach((m) => removeLocal(m.id));
+    toast(`Deleted ${removed.length} for you`, {
+      duration: 5000,
+      action: { label: 'Undo', onClick: () => removed.forEach((m: Message) => upsert(m)) },
+    });
+  };
+
+  const bulkDeleteForEveryone = (ids: string[]) => {
+    ids.forEach((id) => {
+      removeLocal(id);
+      if (isConnection) {
+        sendPeerRemove(id);
+        void removeConvMessage(channelId, id);
+      } else if (isDm && SIGNAL_URL) {
+        void removeRemoteMessage(id);
+        sendPeerRemove(id);
+      }
+    });
+    toast(`Unsent ${ids.length} item${ids.length > 1 ? 's' : ''}`);
+  };
 
   const name = isConnection ? connPeer!.displayName : peerProfile?.name ?? 'Her';
   const avatar = isConnection ? connPeer!.avatar ?? undefined : peerProfile?.avatar;
@@ -155,7 +190,12 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
               />
             )}
             {panel === 'gallery' && (
-              <ChatGalleryPanel messages={convMessages} onBack={() => setPanel(null)} />
+              <ChatGalleryPanel
+                messages={convMessages}
+                onBack={() => setPanel(null)}
+                onDeleteForMe={bulkDeleteForMe}
+                onDeleteForEveryone={bulkDeleteForEveryone}
+              />
             )}
           </motion.div>
         )}
