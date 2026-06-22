@@ -24,6 +24,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.3.0',
+    date: '2026-06-22',
+    title: 'Shared memories',
+    changes: [
+      { kind: 'new', text: 'Pin your favourite messages and photos to a shared Memories album — long-press a message and tap “Pin to memories”. Find the album in the chat profile.' },
+      { kind: 'new', text: 'Add a caption to each memory; the album stays in sync on both phones.' },
+    ],
+  },
+  {
     version: '0.2.1',
     date: '2026-06-17',
     title: 'Faster chat & syncing',

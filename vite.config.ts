@@ -13,6 +13,42 @@ const pkg = JSON.parse(
 const APP_VERSION: string = pkg.version || '0.0.0';
 const BUILD_ID: string = new Date().toISOString();
 
+// ── Release guard ──────────────────────────────────────────────────────────
+// The update toast shows __APP_VERSION__ (= package.json version) and Settings →
+// What's new reads CHANGELOG. These MUST stay in lockstep, or the toast announces
+// a stale/wrong version (the classic "says 0.2.0 on every update" bug). This guard
+// fails the build the moment they drift, with instructions on how to fix it.
+function assertChangelogInSync(): void {
+    const changelogPath = new URL('./src/lib/changelog.ts', import.meta.url);
+    const src = readFileSync(changelogPath, 'utf-8');
+    // grab the FIRST `version: '...'` after the CHANGELOG declaration (newest entry)
+    const afterDecl = src.slice(src.indexOf('CHANGELOG'));
+    const match = afterDecl.match(/version:\s*['"]([^'"]+)['"]/);
+    const topVersion = match ? match[1] : null;
+    if (topVersion !== APP_VERSION) {
+        throw new Error(
+            [
+                '',
+                '╳ RELEASE VERSION MISMATCH — build stopped on purpose.',
+                '',
+                `  package.json version : ${APP_VERSION}`,
+                `  changelog top version: ${topVersion ?? '(none found)'}`,
+                '',
+                '  Every user-facing change must bump BOTH, in lockstep (see CLAUDE.md → Working Rules):',
+                '    1. main-app/frontend/package.json  → "version"  (patch=fix, minor=feature)',
+                '    2. src/lib/changelog.ts            → add a NEW top CHANGELOG entry with the same version',
+                '',
+                '  Why: the "Update available" toast reads package.json (__APP_VERSION__) and Settings →',
+                '  What\'s new reads the changelog. If they disagree, the toast shows the wrong version.',
+                '',
+                `  Fix: set both to the same version (and add a changelog note for what changed).`,
+                '',
+            ].join('\n'),
+        );
+    }
+}
+assertChangelogInSync();
+
 // base './' keeps the build deployable both on Vercel and as a plain
 // dist/ folder under any Apache subpath.
 export default defineConfig({
