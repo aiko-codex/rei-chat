@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Check, ExternalLink, ImageOff, Play, Trash2, Undo2 } from 'lucide-react';
+import { ArrowLeft, Check, ExternalLink, Eye, EyeOff, ImageOff, Play, Trash2, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ConfirmDialog } from '@/features/settings/ConfirmDialog';
@@ -17,6 +17,14 @@ interface ChatGalleryPanelProps {
   onDeleteForMe: (ids: string[]) => void;
   /** unsend selected messages for everyone + the server */
   onDeleteForEveryone: (ids: string[]) => void;
+  /** 'media' = the normal gallery (offers Hide); 'vault' = the Hidden vault (offers Unhide) */
+  mode?: 'media' | 'vault';
+  /** header title — defaults per mode */
+  title?: string;
+  /** move selected into the Hidden vault (media mode) */
+  onHide?: (ids: string[]) => void;
+  /** restore selected out of the Hidden vault (vault mode) */
+  onUnhide?: (ids: string[]) => void;
 }
 
 interface LinkHit {
@@ -29,7 +37,12 @@ export function ChatGalleryPanel({
   onBack,
   onDeleteForMe,
   onDeleteForEveryone,
+  mode = 'media',
+  title,
+  onHide,
+  onUnhide,
 }: ChatGalleryPanelProps) {
+  const headerTitle = title ?? (mode === 'vault' ? 'Hidden vault' : 'Media & links');
   const [tab, setTab] = useState<Tab>('photos');
   const [lightbox, setLightbox] = useState<Message | null>(null);
   const [selecting, setSelecting] = useState(false);
@@ -94,6 +107,14 @@ export function ChatGalleryPanel({
     onDeleteForEveryone([...selected]);
     exitSelect();
   };
+  const runHide = () => {
+    onHide?.([...selected]);
+    exitSelect();
+  };
+  const runUnhide = () => {
+    onUnhide?.([...selected]);
+    exitSelect();
+  };
 
   const grid = tab === 'photos' ? photos : videos;
   const hasAny = photos.length + videos.length + links.length > 0;
@@ -131,7 +152,7 @@ export function ChatGalleryPanel({
             <Button variant="ghost" size="icon" className="cursor-pointer" onClick={onBack} aria-label="Back" data-testid="gallery-back">
               <ArrowLeft />
             </Button>
-            <p className="flex-1 text-sm font-semibold">Media &amp; links</p>
+            <p className="flex-1 text-sm font-semibold">{headerTitle}</p>
             {hasAny && (
               <Button
                 variant="ghost"
@@ -260,22 +281,41 @@ export function ChatGalleryPanel({
 
       {/* bulk action bar */}
       {selecting && count > 0 && (
-        <div className="flex gap-2 border-t bg-background px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+        <div className="grid grid-cols-3 gap-2 border-t bg-background px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+          {mode === 'vault' ? (
+            <Button
+              variant="outline"
+              className="cursor-pointer flex-col gap-0.5 py-2 text-[11px] [&_svg]:size-5"
+              onClick={runUnhide}
+              data-testid="gallery-unhide"
+            >
+              <Eye /> Unhide
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              className="cursor-pointer flex-col gap-0.5 py-2 text-[11px] [&_svg]:size-5"
+              onClick={runHide}
+              data-testid="gallery-hide"
+            >
+              <EyeOff /> Hide
+            </Button>
+          )}
           <Button
             variant="outline"
-            className="flex-1 cursor-pointer"
+            className="cursor-pointer flex-col gap-0.5 py-2 text-[11px] [&_svg]:size-5"
             onClick={runDeleteForMe}
             data-testid="gallery-delete-me"
           >
-            <Undo2 className="size-4" /> Delete for me
+            <Undo2 /> Delete for me
           </Button>
           <Button
             variant="destructive"
-            className="flex-1 cursor-pointer"
+            className="cursor-pointer flex-col gap-0.5 py-2 text-[11px] [&_svg]:size-5"
             onClick={() => setConfirmEveryone(true)}
             data-testid="gallery-delete-everyone"
           >
-            <Trash2 className="size-4" /> Unsend for everyone
+            <Trash2 /> Unsend
           </Button>
         </div>
       )}

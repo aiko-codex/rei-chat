@@ -85,7 +85,7 @@ export function ChatScreen({
     const messages = useMemo(
         () =>
             allMessages.filter(
-                (m) => (m.channelId ?? DM_CHANNEL_ID) === channelId,
+                (m) => (m.channelId ?? DM_CHANNEL_ID) === channelId && !m.hidden,
             ),
         [allMessages, channelId],
     );

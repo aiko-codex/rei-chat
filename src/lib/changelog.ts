@@ -24,6 +24,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.5.0',
+    date: '2026-06-23',
+    title: 'Hidden vault',
+    changes: [
+      { kind: 'new', text: 'A private, password-protected Hidden vault for photos & videos. In Media & links, select items and tap “Hide” to move them in.' },
+      { kind: 'new', text: 'The vault stays out of sight: tap the name at the top of a chat’s profile 5 times to reveal it, then enter your password to open it. Hidden items also disappear from the chat itself.' },
+    ],
+  },
+  {
     version: '0.4.0',
     date: '2026-06-22',
     title: 'Clean up your shared media',

@@ -15,6 +15,7 @@ const TOKEN_KEY = 'rei-session-token';
 const ACCOUNT_KEY = 'rei-account';
 const PUB_KEY = 'rei-acct-pub';
 const PRIV_KEY = 'rei-acct-priv';
+const WRAP_KEY = 'rei-acct-wrap';
 const MUST_KEY = 'rei-must-set-password';
 
 export interface Account {
@@ -115,6 +116,17 @@ export function setKeys(k: KeyPair): void {
   localStorage.setItem(PRIV_KEY, toB64(k.privateKey));
 }
 
+/** The password-wrapped (ciphertext) private key, stored so the owner's password
+ *  can be verified OFFLINE (unwrap attempt) to gate the Hidden vault. Safe at
+ *  rest — it's ciphertext, and the plaintext key is already persisted anyway. */
+export function setWrappedPrivkey(wrapped: string): void {
+  localStorage.setItem(WRAP_KEY, wrapped);
+}
+
+export function getWrappedPrivkey(): string | null {
+  return localStorage.getItem(WRAP_KEY);
+}
+
 export function clearSession(): void {
   token = null;
   account = null;
@@ -124,5 +136,6 @@ export function clearSession(): void {
   localStorage.removeItem(ACCOUNT_KEY);
   localStorage.removeItem(PUB_KEY);
   localStorage.removeItem(PRIV_KEY);
+  localStorage.removeItem(WRAP_KEY);
   localStorage.removeItem(MUST_KEY);
 }

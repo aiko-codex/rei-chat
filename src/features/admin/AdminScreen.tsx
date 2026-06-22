@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft } from 'lucide-react';
+import { Check, ChevronLeft, Copy } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -26,7 +27,9 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [tempPassword, setTempPassword] = useState('');
-  const [created, setCreated] = useState<string | null>(null);
+  // the just-created credentials, shown with copy buttons (the plaintext temp
+  // password exists only here — the server stores a hash, never the password)
+  const [created, setCreated] = useState<{ username: string; password: string } | null>(null);
 
   const refresh = async (adminPw: string) => {
     const { accounts } = await listAccounts(adminPw);
@@ -59,7 +62,7 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
         email: email.trim() || undefined,
         tempPassword,
       });
-      setCreated(`@${res.username} created · temp password: ${tempPassword}`);
+      setCreated({ username: res.username, password: tempPassword });
       setUsername('');
       setDisplayName('');
       setEmail('');
@@ -140,7 +143,23 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
                 placeholder='Temporary password'
                 data-testid='admin-new-temp'
               />
-              {created && <p className='text-sm text-emerald-600'>{created}</p>}
+              {created && (
+                <div className='space-y-2 rounded-xl border border-emerald-600/40 bg-emerald-600/5 p-3' data-testid='admin-created-card'>
+                  <p className='text-xs font-medium text-emerald-600'>Account created — share these credentials</p>
+                  <CredentialRow label='Username' value={created.username} testId='admin-copy-username' />
+                  <CredentialRow label='Password' value={created.password} testId='admin-copy-password' />
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    className='w-full cursor-pointer'
+                    onClick={() => void copyText(`Username: ${created.username}\nPassword: ${created.password}`, 'Credentials copied')}
+                    data-testid='admin-copy-both'
+                  >
+                    <Copy className='size-3.5' /> Copy both
+                  </Button>
+                </div>
+              )}
               {error && <p className='text-sm text-destructive'>{error}</p>}
               <Button
                 type='submit'
@@ -164,12 +183,21 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
                         {a.disabled ? 'disabled' : a.mustSetPassword ? 'awaiting first login' : 'active'}
                       </p>
                     </div>
-                    <button
-                      onClick={() => toggleDisabled(a)}
-                      className='shrink-0 rounded-full border px-3 py-1 text-xs hover:bg-muted'
-                    >
-                      {a.disabled ? 'Enable' : 'Disable'}
-                    </button>
+                    <div className='flex shrink-0 items-center gap-1.5'>
+                      <button
+                        onClick={() => void copyText(a.username, 'Username copied')}
+                        className='rounded-full border p-1.5 text-muted-foreground hover:bg-muted [&_svg]:size-3.5'
+                        aria-label='Copy username'
+                      >
+                        <Copy />
+                      </button>
+                      <button
+                        onClick={() => toggleDisabled(a)}
+                        className='rounded-full border px-3 py-1 text-xs hover:bg-muted'
+                      >
+                        {a.disabled ? 'Enable' : 'Disable'}
+                      </button>
+                    </div>
                   </li>
                 ))}
                 {accounts.length === 0 && (
@@ -180,6 +208,41 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
           </motion.div>
         )}
       </div>
+    </div>
+  );
+}
+
+async function copyText(text: string, okMsg = 'Copied'): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(okMsg);
+  } catch {
+    toast.error("Couldn't copy");
+  }
+}
+
+function CredentialRow({ label, value, testId }: { label: string; value: string; testId: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    await copyText(value, `${label} copied`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <div className='flex items-center gap-2'>
+      <div className='min-w-0 flex-1'>
+        <p className='text-[11px] uppercase tracking-wide text-muted-foreground'>{label}</p>
+        <p className='truncate font-mono text-sm'>{value}</p>
+      </div>
+      <button
+        type='button'
+        onClick={copy}
+        className='shrink-0 rounded-lg border p-2 text-muted-foreground hover:bg-muted [&_svg]:size-4'
+        aria-label={`Copy ${label.toLowerCase()}`}
+        data-testid={testId}
+      >
+        {copied ? <Check className='text-emerald-600' /> : <Copy />}
+      </button>
     </div>
   );
 }

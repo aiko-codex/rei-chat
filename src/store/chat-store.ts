@@ -219,6 +219,8 @@ interface ChatStore {
   setMemory: (id: string, pinned: boolean, caption?: string) => void;
   /** apply a memory pin to local state only — no re-publish (used by overlay sync) */
   applyMemoryLocal: (id: string, pinned: boolean, caption: string | undefined, at: number) => void;
+  /** move messages in/out of this device's Hidden vault (local-only, not synced) */
+  hideMessages: (ids: string[], hidden: boolean) => void;
   /** flip our sent messages in a connection to 'read' up to `at` (P2P receipt) */
   applyPeerReadAtConnection: (connectionId: string, at: number) => void;
   /** local removal only — callers decide about the server copy */
@@ -797,6 +799,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }));
     const updated = get().messages.find((m) => m.id === id);
     if (persistent && updated) void putMessage(updated);
+  },
+
+  hideMessages: (ids, hidden) => {
+    const idSet = new Set(ids);
+    set((s) => ({
+      messages: s.messages.map((m) => (idSet.has(m.id) ? { ...m, hidden } : m)),
+    }));
+    if (persistent) {
+      for (const id of ids) {
+        const m = get().messages.find((x) => x.id === id);
+        if (m) void putMessage(m);
+      }
+    }
   },
 
   applyPeerReadAtConnection: (connectionId, at) => {

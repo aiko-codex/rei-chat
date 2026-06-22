@@ -1,21 +1,29 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, Heart, Images, Palette, Search, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Heart, Images, Lock, Palette, Search, ShieldCheck } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useChatStore } from '@/store/chat-store';
 import { SIGNAL_URL } from '@/lib/config';
 import { removeRemoteMessage } from '@/lib/message-api';
 import { removeConvMessage } from '@/lib/conversation-api';
 import { sendPeerRemove } from '@/lib/peer-service';
+import { verifyPassword } from '@/lib/account-api';
 import { DM_CHANNEL_ID, type Message } from '@/lib/types';
 import { ChatSearchPanel } from './ChatSearchPanel';
 import { ChatThemePanel } from './ChatThemePanel';
 import { ChatGalleryPanel } from './ChatGalleryPanel';
 import { ChatMemoriesPanel } from './ChatMemoriesPanel';
 
-type Panel = 'search' | 'theme' | 'gallery' | 'memories';
+type Panel = 'search' | 'theme' | 'gallery' | 'memories' | 'vault';
 
 interface ChatDetailsScreenProps {
   onBack: () => void;
@@ -56,16 +64,64 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
   const allMessages = useChatStore((s) => s.messages);
   const removeLocal = useChatStore((s) => s.remove);
   const upsert = useChatStore((s) => s.upsert);
+  const hideMessages = useChatStore((s) => s.hideMessages);
   const [panel, setPanel] = useState<Panel | null>(null);
+
+  // Hidden vault gating. The vault row is invisible until the username is tapped
+  // 5× (an easter-egg reveal), and then opening it requires the owner's login
+  // password. Both reset every time the profile screen is freshly opened.
+  const [nameTaps, setNameTaps] = useState(0);
+  const [vaultRevealed, setVaultRevealed] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pw, setPw] = useState('');
+  const [pwError, setPwError] = useState(false);
+  const [pwBusy, setPwBusy] = useState(false);
 
   const isDm = channelId === DM_CHANNEL_ID;
   const isConnection = channelId !== DM_CHANNEL_ID && Boolean(connectionPeers[channelId]);
   const connPeer = isConnection ? connectionPeers[channelId] : undefined;
 
-  const convMessages = useMemo(
+  const allConvMessages = useMemo(
     () => allMessages.filter((m) => (m.channelId ?? DM_CHANNEL_ID) === channelId),
     [allMessages, channelId],
   );
+  // hidden items live only in the vault — everything else (search, memories,
+  // gallery) sees the visible subset
+  const convMessages = useMemo(() => allConvMessages.filter((m) => !m.hidden), [allConvMessages]);
+  const hiddenMessages = useMemo(() => allConvMessages.filter((m) => m.hidden), [allConvMessages]);
+
+  const onNameTap = () => {
+    if (vaultRevealed) return;
+    const next = nameTaps + 1;
+    setNameTaps(next);
+    if (next >= 5) {
+      setVaultRevealed(true);
+      toast('Hidden vault unlocked 🔒');
+    }
+  };
+
+  const submitPassword = async () => {
+    setPwBusy(true);
+    setPwError(false);
+    const ok = await verifyPassword(pw);
+    setPwBusy(false);
+    if (ok) {
+      setPwOpen(false);
+      setPw('');
+      setPanel('vault');
+    } else {
+      setPwError(true);
+    }
+  };
+
+  const hide = (ids: string[]) => {
+    hideMessages(ids, true);
+    toast(`Moved ${ids.length} to the vault`);
+  };
+  const unhide = (ids: string[]) => {
+    hideMessages(ids, false);
+    toast(`Restored ${ids.length} item${ids.length > 1 ? 's' : ''}`);
+  };
 
   // Bulk delete from the gallery. Mirrors ChatScreen's per-message paths:
   // "for me" is local-only (with a 5s undo); "for everyone" removes our copy,
@@ -119,7 +175,14 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
               {name[0]?.toUpperCase()}
             </AvatarFallback>
           </Avatar>
-          <p className="text-lg font-semibold">{name}</p>
+          <button
+            type="button"
+            onClick={onNameTap}
+            className="cursor-default text-lg font-semibold"
+            data-testid="profile-name"
+          >
+            {name}
+          </button>
           {connPeer && <p className="-mt-2 text-xs text-muted-foreground">@{connPeer.username}</p>}
           <p className="flex items-center gap-1 text-xs text-emerald-600">
             <ShieldCheck className="size-3.5" /> End-to-end encrypted
@@ -155,6 +218,19 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
             onClick={() => setPanel('gallery')}
             testId="details-gallery"
           />
+          {vaultRevealed && (
+            <DetailRow
+              icon={<Lock className="size-5" />}
+              label="Hidden vault"
+              hint={`Password-protected · ${hiddenMessages.length} item${hiddenMessages.length === 1 ? '' : 's'}`}
+              onClick={() => {
+                setPw('');
+                setPwError(false);
+                setPwOpen(true);
+              }}
+              testId="details-vault"
+            />
+          )}
         </div>
       </div>
 
@@ -195,11 +271,61 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
                 onBack={() => setPanel(null)}
                 onDeleteForMe={bulkDeleteForMe}
                 onDeleteForEveryone={bulkDeleteForEveryone}
+                onHide={hide}
+              />
+            )}
+            {panel === 'vault' && (
+              <ChatGalleryPanel
+                mode="vault"
+                messages={hiddenMessages}
+                onBack={() => setPanel(null)}
+                onDeleteForMe={bulkDeleteForMe}
+                onDeleteForEveryone={bulkDeleteForEveryone}
+                onUnhide={unhide}
               />
             )}
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* owner password gate for the Hidden vault */}
+      <Dialog open={pwOpen} onOpenChange={(o) => { if (!o) { setPwOpen(false); setPw(''); setPwError(false); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <Lock className="size-5 text-muted-foreground" />
+              <DialogTitle>Unlock Hidden vault</DialogTitle>
+            </div>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Enter your account password to confirm it’s you.
+          </p>
+          <input
+            type="password"
+            autoFocus
+            value={pw}
+            onChange={(e) => { setPw(e.target.value); setPwError(false); }}
+            onKeyDown={(e) => e.key === 'Enter' && pw && !pwBusy && void submitPassword()}
+            placeholder="Password"
+            className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+            data-testid="vault-password-input"
+          />
+          {pwError && <p className="text-xs text-destructive">Incorrect password. Try again.</p>}
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" className="cursor-pointer" onClick={() => { setPwOpen(false); setPw(''); setPwError(false); }}>
+              Cancel
+            </Button>
+            <Button
+              className="cursor-pointer"
+              disabled={!pw || pwBusy}
+              onClick={() => void submitPassword()}
+              data-testid="vault-password-submit"
+            >
+              {pwBusy ? 'Checking…' : 'Unlock'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

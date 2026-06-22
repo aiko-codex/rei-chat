@@ -16,12 +16,15 @@ import {
 } from './account-crypto';
 import {
   clearSession,
+  getAccount,
   getKeys,
   getToken,
+  getWrappedPrivkey,
   setAccount,
   setKeys,
   setMustSetPassword,
   setToken,
+  setWrappedPrivkey,
   type Account,
 } from './session';
 
@@ -82,8 +85,39 @@ export async function login(
     const priv = unwrapPrivateKey(data.wrappedPrivkey, password);
     if (!priv) throw new Error('could not unlock your keys (wrong password?)');
     setKeys({ publicKey: fromB64(data.pubkey), privateKey: priv });
+    // keep the wrapped (ciphertext) key so the owner password can be re-verified
+    // offline later (gates the Hidden vault) without another server round-trip
+    setWrappedPrivkey(data.wrappedPrivkey);
   }
   return { mustSetPassword: data.mustSetPassword };
+}
+
+/**
+ * Verify the entered password is the account owner's — used to gate the Hidden
+ * vault. Tries OFFLINE first (unwrap the locally-stored wrapped private key);
+ * falls back to a server `login` check (which also caches the wrapped key) for
+ * accounts that logged in before the wrapped key was being stored. Does NOT
+ * mutate the active session.
+ */
+export async function verifyPassword(password: string): Promise<boolean> {
+  if (!password) return false;
+  const wrapped = getWrappedPrivkey();
+  if (wrapped) return unwrapPrivateKey(wrapped, password) !== null;
+  const acct = getAccount();
+  if (!acct) return false;
+  try {
+    const data = await postJson<LoginResp>('login', {
+      identifier: acct.username,
+      password,
+    });
+    if (data.wrappedPrivkey && unwrapPrivateKey(data.wrappedPrivkey, password)) {
+      setWrappedPrivkey(data.wrappedPrivkey);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -100,6 +134,7 @@ export async function setPassword(newPassword: string): Promise<void> {
     wrappedPrivkey: wrapped,
   });
   setKeys(kp);
+  setWrappedPrivkey(wrapped);
   setMustSetPassword(false);
 }
 

@@ -99,6 +99,10 @@ export interface Message {
   memoryCaption?: string;
   /** when it was pinned (epoch ms) — orders the album, newest first */
   pinnedAt?: number;
+  /** moved to this device's password-protected Hidden vault — filtered out of
+   *  the chat, search, memories and the normal gallery. Device-local, never
+   *  synced (a personal hide, not a shared action). */
+  hidden?: boolean;
   /** todo channels reuse message rows as items; checked state lives here */
   done?: boolean;
   /** todo: optional deadline (epoch ms) — drives the time progress bar */
