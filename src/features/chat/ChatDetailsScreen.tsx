@@ -23,6 +23,7 @@ import { ChatThemePanel } from './ChatThemePanel';
 import { ChatGalleryPanel } from './ChatGalleryPanel';
 import { ChatMemoriesPanel } from './ChatMemoriesPanel';
 import { ChatDatesPanel } from './ChatDatesPanel';
+import { AvatarViewer } from './AvatarViewer';
 
 type Panel = 'search' | 'theme' | 'gallery' | 'memories' | 'vault' | 'dates';
 
@@ -67,6 +68,7 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
   const upsert = useChatStore((s) => s.upsert);
   const hideMessages = useChatStore((s) => s.hideMessages);
   const [panel, setPanel] = useState<Panel | null>(null);
+  const [avatarViewerOpen, setAvatarViewerOpen] = useState(false);
 
   // Hidden vault gating. The vault row is invisible until the username is tapped
   // 5× (an easter-egg reveal), and then opening it requires the owner's login
@@ -167,15 +169,24 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
       <div className="flex-1 overflow-y-auto">
         {/* Instagram-style profile block */}
         <div className="flex flex-col items-center gap-3 px-6 py-8">
-          <Avatar className="size-24">
-            {avatar && <AvatarImage src={avatar} alt={name} />}
-            <AvatarFallback
-              className="text-3xl font-semibold text-white"
-              style={avatarColor ? { backgroundColor: avatarColor } : { backgroundColor: '#b03a6e' }}
-            >
-              {name[0]?.toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <button
+            type="button"
+            onClick={() => avatar && setAvatarViewerOpen(true)}
+            disabled={!avatar}
+            aria-label={avatar ? 'View photo' : undefined}
+            data-testid="details-avatar"
+            className="enabled:cursor-pointer"
+          >
+            <Avatar className="size-24">
+              {avatar && <AvatarImage src={avatar} alt={name} />}
+              <AvatarFallback
+                className="text-3xl font-semibold text-white"
+                style={avatarColor ? { backgroundColor: avatarColor } : { backgroundColor: '#b03a6e' }}
+              >
+                {name[0]?.toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          </button>
           <button
             type="button"
             onClick={onNameTap}
@@ -298,6 +309,12 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AvatarViewer
+        src={avatarViewerOpen ? avatar ?? null : null}
+        name={name}
+        onClose={() => setAvatarViewerOpen(false)}
+      />
 
       {/* owner password gate for the Hidden vault */}
       <Dialog open={pwOpen} onOpenChange={(o) => { if (!o) { setPwOpen(false); setPw(''); setPwError(false); } }}>

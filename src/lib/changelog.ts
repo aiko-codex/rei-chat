@@ -24,6 +24,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.8.1',
+    date: '2026-06-23',
+    title: 'View profile photo',
+    changes: [
+      { kind: 'new', text: 'Tap the photo in Chat Details to see it full-screen.' },
+    ],
+  },
+  {
     version: '0.8.0',
     date: '2026-06-23',
     title: 'Mood check-ins',
