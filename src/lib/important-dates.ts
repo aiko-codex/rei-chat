@@ -15,6 +15,7 @@ import {
   Sun,
   type LucideIcon,
 } from 'lucide-react';
+import { ACCENTS } from './accent';
 import type { ImportantDate } from './types';
 
 export interface DateIconOption {
@@ -39,6 +40,12 @@ export const DATE_ICONS: DateIconOption[] = [
 
 export function dateIcon(id: string): LucideIcon {
   return DATE_ICONS.find((d) => d.id === id)?.icon ?? CalendarHeart;
+}
+
+/** the per-date theme color (oklch), reusing the app's accent palette so a
+ *  date's icon badge + countdown chip can stand out beyond the brand rose */
+export function dateColor(id: string | undefined): string {
+  return ACCENTS.find((a) => a.id === id)?.primary ?? ACCENTS[0].primary;
 }
 
 function storageKey(channelId: string): string {

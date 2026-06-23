@@ -15,13 +15,17 @@ import {
 } from '@/components/ui/drawer';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/store/chat-store';
-import { DATE_ICONS, dateIcon, daysUntil, nextOccurrence } from '@/lib/important-dates';
+import { ACCENTS } from '@/lib/accent';
+import { DATE_ICONS, dateColor, dateIcon, daysUntil, nextOccurrence } from '@/lib/important-dates';
 import type { ImportantDate } from '@/lib/types';
 
 interface ChatDatesPanelProps {
   channelId: string;
   onBack: () => void;
 }
+
+// hides the scrollbar in both engines while keeping native momentum scroll
+const SCROLLER = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
 
 function countdownLabel(days: number): string {
   if (days === 0) return 'Today';
@@ -33,7 +37,15 @@ function countdownLabel(days: number): string {
 }
 
 function emptyDraft(): ImportantDate {
-  return { id: crypto.randomUUID(), title: '', date: Date.now(), icon: 'heart', repeatYearly: false, updatedAt: 0 };
+  return {
+    id: crypto.randomUUID(),
+    title: '',
+    date: Date.now(),
+    icon: 'heart',
+    color: 'rose',
+    repeatYearly: false,
+    updatedAt: 0,
+  };
 }
 
 export function ChatDatesPanel({ channelId, onBack }: ChatDatesPanelProps) {
@@ -129,15 +141,17 @@ export function ChatDatesPanel({ channelId, onBack }: ChatDatesPanelProps) {
         )}
       </div>
 
+      {/* no autoFocus on the title input — iOS pops the keyboard immediately
+          on sheet-open otherwise, pushing the sheet content out of view before
+          the user has even seen it */}
       <Drawer open={sheetOpen} onOpenChange={setSheetOpen}>
         <DrawerContent data-testid="date-edit-sheet">
           <DrawerHeader className="pb-1">
             <DrawerTitle className="text-base">{editingId ? 'Edit date' : 'New important date'}</DrawerTitle>
           </DrawerHeader>
 
-          <div className="flex flex-col gap-5 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-1">
+          <div className="flex flex-col gap-5 overflow-y-auto px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-1">
             <Input
-              autoFocus
               value={draft.title}
               onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
               placeholder="e.g. Our anniversary"
@@ -148,27 +162,69 @@ export function ChatDatesPanel({ channelId, onBack }: ChatDatesPanelProps) {
 
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground">Icon</p>
-              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+              <div className={cn('flex gap-3 overflow-x-auto px-0.5 py-1.5', SCROLLER)}>
                 {DATE_ICONS.map(({ id, icon: Icon, label }) => {
                   const selected = draft.icon === id;
+                  const c = dateColor(draft.color);
                   return (
                     <motion.button
                       key={id}
                       type="button"
-                      aria-label={label}
                       onClick={() => setDraft((d) => ({ ...d, icon: id }))}
                       whileTap={{ scale: 0.88 }}
-                      animate={{ scale: selected ? 1.06 : 1 }}
+                      animate={{ scale: selected ? 1.08 : 1 }}
                       transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                       data-testid={`date-icon-${id}`}
-                      className={cn(
-                        'flex size-12 shrink-0 cursor-pointer items-center justify-center rounded-full border transition-colors',
-                        selected
-                          ? 'border-primary bg-primary/15 text-primary'
-                          : 'border-border text-muted-foreground hover:bg-muted',
-                      )}
+                      className="flex shrink-0 flex-col items-center gap-1"
                     >
-                      <Icon className="size-5" />
+                      <span
+                        className={cn(
+                          'flex size-12 items-center justify-center rounded-full border-2 transition-colors',
+                          selected ? 'border-current' : 'border-border text-muted-foreground',
+                        )}
+                        style={
+                          selected
+                            ? { color: c, backgroundColor: `color-mix(in oklch, ${c} 15%, transparent)` }
+                            : undefined
+                        }
+                      >
+                        <Icon className="size-5" />
+                      </span>
+                      <span className={cn('text-[10px] leading-none', selected ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                        {label}
+                      </span>
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Theme</p>
+              <div className={cn('flex gap-3 overflow-x-auto px-0.5 py-1.5', SCROLLER)}>
+                {ACCENTS.map((a) => {
+                  const selected = (draft.color ?? 'rose') === a.id;
+                  return (
+                    <motion.button
+                      key={a.id}
+                      type="button"
+                      onClick={() => setDraft((d) => ({ ...d, color: a.id }))}
+                      whileTap={{ scale: 0.88 }}
+                      animate={{ scale: selected ? 1.08 : 1 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      data-testid={`date-color-${a.id}`}
+                      className="flex shrink-0 flex-col items-center gap-1"
+                    >
+                      <span
+                        className={cn(
+                          'flex size-9 items-center justify-center rounded-full ring-2 ring-offset-2 ring-offset-popover transition-all',
+                          selected ? 'ring-foreground' : 'ring-transparent',
+                        )}
+                        style={{ backgroundColor: a.primary }}
+                      />
+                      <span className={cn('text-[10px] leading-none', selected ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                        {a.label}
+                      </span>
                     </motion.button>
                   );
                 })}
@@ -271,6 +327,7 @@ function DateGroup({
             const occ = nextOccurrence(entry, now);
             const days = daysUntil(occ, now);
             const isToday = days === 0;
+            const c = dateColor(entry.color);
             return (
               <motion.button
                 key={entry.id}
@@ -285,7 +342,10 @@ function DateGroup({
                 data-testid={`date-row-${entry.id}`}
                 className="flex w-full cursor-pointer items-center gap-3 rounded-2xl border bg-card px-3.5 py-3 text-left transition-colors hover:bg-muted/60"
               >
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+                <span
+                  className="flex size-10 shrink-0 items-center justify-center rounded-full"
+                  style={{ color: c, backgroundColor: `color-mix(in oklch, ${c} 15%, transparent)` }}
+                >
                   <Icon className="size-5" />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -298,10 +358,12 @@ function DateGroup({
                 <motion.span
                   animate={isToday ? { scale: [1, 1.08, 1] } : { scale: 1 }}
                   transition={isToday ? { duration: 1.6, repeat: Infinity, ease: 'easeInOut' } : undefined}
-                  className={cn(
-                    'shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold',
-                    isToday ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
-                  )}
+                  className="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
+                  style={
+                    isToday
+                      ? { backgroundColor: c, color: 'white' }
+                      : { backgroundColor: `color-mix(in oklch, ${c} 12%, transparent)`, color: c }
+                  }
                 >
                   {countdownLabel(days)}
                 </motion.span>

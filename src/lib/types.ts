@@ -126,6 +126,8 @@ export interface ImportantDate {
   date: number;
   /** icon id from lib/important-dates.ts DATE_ICONS — never an emoji */
   icon: string;
+  /** accent id from lib/accent.ts ACCENTS — colors the icon badge + countdown chip */
+  color?: string;
   /** anniversaries/birthdays: the countdown re-targets next year once passed */
   repeatYearly?: boolean;
   /** epoch ms last edited — resolves last-writer-wins on sync */

@@ -24,6 +24,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.6.1',
+    date: '2026-06-23',
+    title: 'Important dates polish',
+    changes: [
+      { kind: 'fix', text: 'The new-date sheet no longer gets hidden behind the keyboard.' },
+      { kind: 'improve', text: 'Icons now have labels and a colour theme to make each date stand out.' },
+    ],
+  },
+  {
     version: '0.6.0',
     date: '2026-06-23',
     title: 'Important dates',

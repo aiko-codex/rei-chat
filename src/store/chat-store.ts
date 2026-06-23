@@ -335,7 +335,7 @@ interface ChatStore {
 }
 
 type DateOverlayValue =
-  | { title: string; date: number; icon: string; repeatYearly?: boolean; at: number }
+  | { title: string; date: number; icon: string; color?: string; repeatYearly?: boolean; at: number }
   | { deleted: true; at: number }
   | null;
 
@@ -359,7 +359,7 @@ function applyDateOverlay(
       : v
         ? [
             ...list.filter((d) => d.id !== id),
-            { id, title: v.title, date: v.date, icon: v.icon, repeatYearly: v.repeatYearly, updatedAt: at },
+            { id, title: v.title, date: v.date, icon: v.icon, color: v.color, repeatYearly: v.repeatYearly, updatedAt: at },
           ]
         : list.filter((d) => d.id !== id);
   storeDates(channelId, next);
@@ -863,6 +863,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       title: entry.title,
       date: entry.date,
       icon: entry.icon,
+      color: entry.color,
       repeatYearly: entry.repeatYearly,
       at: entry.updatedAt,
     };
