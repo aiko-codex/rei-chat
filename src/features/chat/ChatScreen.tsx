@@ -68,6 +68,7 @@ export function ChatScreen({
     const connDiag = useChatStore((s) => s.connDiag);
     const peerTyping = useChatStore((s) => s.peerTyping);
     const peerProfile = useChatStore((s) => s.peerProfile);
+    const peerMood = useChatStore((s) => s.peerMood);
     const channels = useChatStore((s) => s.channels);
     const chatBg = useChatStore((s) => s.chatBg);
     const chatBgUrl = useChatStore((s) => s.chatBgUrl);
@@ -566,11 +567,13 @@ export function ChatScreen({
                     onVideoCall={onVideoCall}
                     onOpenVoiceChannel={onOpenVoiceChannel}
                     onOpenProfile={onOpenDetails}
+                    peerMood={peerMood}
                 />
             ) : isConnection ? (
                 <ChatHeader
                     title={connPeer?.displayName ?? 'Chat'}
                     avatarUrl={connPeer?.avatar ?? undefined}
+                    peerMood={connPeer?.mood}
                     connState={
                         connPeerOnline || peerStatus === 'connected'
                             ? 'online'

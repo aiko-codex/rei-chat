@@ -76,6 +76,7 @@ import {
   type ChatBackground,
 } from '@/lib/chat-theme';
 import { loadDates, storeDates } from '@/lib/important-dates';
+import type { Mood } from '@/lib/mood';
 import {
   DM_CHANNEL_ID,
   type AcceptedNotice,
@@ -97,6 +98,8 @@ const LAST_SEEN_KEY = 'rei-last-seen';
 // messages she's seen; ours dedupes our own outgoing read-marker uploads
 const PEER_READ_KEY = 'rei-peer-read';
 const MY_READ_KEY = 'rei-my-read';
+const MY_MOOD_KEY = 'rei-mood';
+const PEER_MOOD_KEY = 'rei-peer-mood';
 
 function readNum(key: string): number {
   const n = Number(localStorage.getItem(key));
@@ -262,6 +265,13 @@ interface ChatStore {
   /** apply the peer's read mark — flips our delivered DM sends to 'read' */
   applyPeerReadAt: (at: number) => void;
 
+  /** my mood/check-in status (null = none set / cleared) */
+  myMood: Mood | null;
+  /** her mood, for the legacy DM (connections carry it on connectionPeers[id].mood) */
+  peerMood: Mood | null;
+  /** set/clear my mood and publish it to whichever channel is active right now */
+  setMood: (channelId: string, mood: Mood | null) => void;
+
   /** replace the quick-reaction set (persists; slot 0 = double-tap default) */
   setQuickReactions: (reactions: string[]) => void;
   setMyProfile: (profile: Profile) => void;
@@ -289,7 +299,7 @@ interface ChatStore {
   activeConnectionId: string | null;
   setActiveConnection: (connectionId: string | null) => void;
   /** remembered peer display name/username per connection (for the header) */
-  connectionPeers: Record<string, { displayName: string; username: string; avatar?: string | null }>;
+  connectionPeers: Record<string, { displayName: string; username: string; avatar?: string | null; mood?: Mood | null }>;
   rememberConnectionPeer: (
     connectionId: string,
     peer: { displayName: string; username: string; avatar?: string | null },
@@ -429,6 +439,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   connectionAccepts: [],
   connectionReadAt: {},
   datesByChannel: {},
+  myMood: readJson<Mood>(MY_MOOD_KEY),
+  peerMood: readJson<Mood>(PEER_MOOD_KEY),
 
   hydrate: async () => {
     if (!persistent || get().hydrated || !isPaired()) return;
@@ -518,6 +530,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           applyDateOverlay(get, set, DM_CHANNEL_ID, row.key.slice('date:'.length), row.value);
         } else if (row.key.startsWith('loc:')) {
           applyLiveLocationOverlay(get, set, row.key.slice('loc:'.length), row.value);
+        } else if (row.key === 'mood' && !row.mine) {
+          const mood = row.value as Mood | null;
+          set({ peerMood: mood });
+          if (mood) localStorage.setItem(PEER_MOOD_KEY, JSON.stringify(mood));
+          else localStorage.removeItem(PEER_MOOD_KEY);
         } else if (row.key === 'chat-bg') {
           // shared wallpaper — last-writer-wins by the embedded timestamp, so a
           // stale row (or our own echo) never clobbers a newer selection
@@ -925,6 +942,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
+  setMood: (channelId, mood) => {
+    set({ myMood: mood });
+    if (mood) localStorage.setItem(MY_MOOD_KEY, JSON.stringify(mood));
+    else localStorage.removeItem(MY_MOOD_KEY);
+    if (!persistent) return;
+    if (channelId !== DM_CHANNEL_ID && get().connectionPeers[channelId]) {
+      void uploadConvMeta(channelId, 'mood', mood);
+    } else {
+      void uploadMeta('mood', mood);
+    }
+  },
+
   setLiveLocation: (channelId, id, patch) => {
     const current = get().messages.find((m) => m.id === id);
     if (!current) return;
@@ -1260,6 +1289,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           applyDateOverlay(get, set, connectionId, row.key.slice('date:'.length), row.value);
         } else if (row.key.startsWith('loc:')) {
           applyLiveLocationOverlay(get, set, row.key.slice('loc:'.length), row.value);
+        } else if (row.key === 'mood' && !row.mine) {
+          const mood = row.value as Mood | null;
+          set({
+            connectionPeers: {
+              ...get().connectionPeers,
+              [connectionId]: { ...get().connectionPeers[connectionId], mood },
+            },
+          });
         } else if (row.key === 'chat-bg') {
           // shared wallpaper for this connection — last-writer-wins by the
           // embedded timestamp (a stale row / our own echo never clobbers a

@@ -3,7 +3,9 @@ import { ChevronLeft, ChevronRight, Hash, Headphones, ListTodo, MoreVertical, Ph
 import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { MoodBadge } from './MoodBadge';
 import { cn } from '@/lib/utils';
+import type { Mood } from '@/lib/mood';
 
 interface ChatHeaderProps {
   title: string;
@@ -26,6 +28,8 @@ interface ChatHeaderProps {
   onOpenSettings?: () => void;
   /** tap the avatar/name to open the conversation profile (DM only) */
   onOpenProfile?: () => void;
+  /** her current mood/check-in status, shown as a badge on the avatar */
+  peerMood?: Mood | null;
 }
 
 export function ChatHeader({
@@ -43,6 +47,7 @@ export function ChatHeader({
   onOpenVoiceChannel,
   onOpenSettings,
   onOpenProfile,
+  peerMood,
 }: ChatHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const hasActions = Boolean(onVoiceCall || onVideoCall || onOpenVoiceChannel);
@@ -86,6 +91,7 @@ export function ChatHeader({
               {title[0]?.toUpperCase()}
             </AvatarFallback>
             {online && <AvatarBadge className="bg-emerald-500" data-testid="peer-online-badge" />}
+            <MoodBadge mood={peerMood} name={title} />
           </Avatar>
         )}
         <span className="min-w-0 flex-1">

@@ -38,6 +38,8 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty';
 import { useChatStore } from '@/store/chat-store';
+import { MoodBadge } from '@/features/chat/MoodBadge';
+import { MoodPickerSheet } from '@/features/chat/MoodPickerSheet';
 import { DM_CHANNEL_ID, type Message } from '@/lib/types';
 
 function previewOf(m: Message | undefined): string {
@@ -94,6 +96,11 @@ export function HomeScreen({
   const invites = useChatStore((s) => s.invites);
   const acceptances = useChatStore((s) => s.acceptances);
   const rememberConnectionPeer = useChatStore((s) => s.rememberConnectionPeer);
+  const connectionPeers = useChatStore((s) => s.connectionPeers);
+  const myMood = useChatStore((s) => s.myMood);
+  const peerMood = useChatStore((s) => s.peerMood);
+  const setMood = useChatStore((s) => s.setMood);
+  const [moodPickerOpen, setMoodPickerOpen] = useState(false);
   const shareChannelWithConnection = useChatStore((s) => s.shareChannelWithConnection);
 
   // accounts mode: the chats list is driven by accepted connections (not the
@@ -230,15 +237,24 @@ export function HomeScreen({
             <Settings />
           </Button>
           {myProfile && (
-            <Avatar className="size-8" data-testid="home-my-avatar">
-              {myProfile.avatar && <AvatarImage src={myProfile.avatar} alt={myProfile.name} />}
-              <AvatarFallback
-                className="text-sm font-semibold text-white"
-                style={{ backgroundColor: myProfile.color }}
-              >
-                {myProfile.name[0].toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <button
+              type="button"
+              onClick={() => setMoodPickerOpen(true)}
+              aria-label="Set your mood"
+              data-testid="home-my-avatar"
+              className="cursor-pointer"
+            >
+              <Avatar className="size-8">
+                {myProfile.avatar && <AvatarImage src={myProfile.avatar} alt={myProfile.name} />}
+                <AvatarFallback
+                  className="text-sm font-semibold text-white"
+                  style={{ backgroundColor: myProfile.color }}
+                >
+                  {myProfile.name[0].toUpperCase()}
+                </AvatarFallback>
+                <MoodBadge mood={myMood} name={myProfile.name} className="absolute -right-1 -top-1 z-10 flex size-4 items-center justify-center rounded-full bg-background ring-2 ring-background" />
+              </Avatar>
+            </button>
           )}
         </div>
       </header>
@@ -293,6 +309,7 @@ export function HomeScreen({
                 <AvatarFallback className="bg-primary/90 text-white">
                   {conn.account.displayName[0]?.toUpperCase() ?? '?'}
                 </AvatarFallback>
+                <MoodBadge mood={connectionPeers[conn.connectionId]?.mood} name={conn.account.displayName} />
               </Avatar>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[17px] font-semibold">{conn.account.displayName}</p>
@@ -323,6 +340,7 @@ export function HomeScreen({
             {status === 'connected' && (
               <AvatarBadge className="bg-emerald-500" data-testid="home-dm-online" />
             )}
+            <MoodBadge mood={peerMood} name={peerName} />
           </Avatar>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[17px] font-semibold">{peerName}</p>
@@ -598,6 +616,15 @@ export function HomeScreen({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <MoodPickerSheet
+        open={moodPickerOpen}
+        onClose={() => setMoodPickerOpen(false)}
+        current={myMood}
+        onSet={(mood) =>
+          setMood(accountsMode ? acceptedConnections[0]?.connectionId ?? DM_CHANNEL_ID : DM_CHANNEL_ID, mood)
+        }
+      />
     </div>
   );
 }

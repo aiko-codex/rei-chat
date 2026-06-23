@@ -24,6 +24,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.8.0',
+    date: '2026-06-23',
+    title: 'Mood check-ins',
+    changes: [
+      { kind: 'new', text: 'Tap your avatar on Home to set a mood — she sees a little animated face badge on your photo for a few hours.' },
+    ],
+  },
+  {
     version: '0.7.0',
     date: '2026-06-23',
     title: 'Live location sharing',
