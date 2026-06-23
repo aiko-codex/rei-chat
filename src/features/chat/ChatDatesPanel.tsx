@@ -144,7 +144,7 @@ export function ChatDatesPanel({ channelId, onBack }: ChatDatesPanelProps) {
       {/* no autoFocus on the title input — iOS pops the keyboard immediately
           on sheet-open otherwise, pushing the sheet content out of view before
           the user has even seen it */}
-      <Drawer open={sheetOpen} onOpenChange={setSheetOpen}>
+      <Drawer open={sheetOpen} onOpenChange={setSheetOpen} repositionInputs={false}>
         <DrawerContent data-testid="date-edit-sheet">
           <DrawerHeader className="pb-1">
             <DrawerTitle className="text-base">{editingId ? 'Edit date' : 'New important date'}</DrawerTitle>
@@ -162,7 +162,7 @@ export function ChatDatesPanel({ channelId, onBack }: ChatDatesPanelProps) {
 
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground">Icon</p>
-              <div className={cn('flex gap-3 overflow-x-auto px-0.5 py-1.5', SCROLLER)}>
+              <div className={cn('flex gap-3 overflow-x-auto px-1 py-2.5', SCROLLER)}>
                 {DATE_ICONS.map(({ id, icon: Icon, label }) => {
                   const selected = draft.icon === id;
                   const c = dateColor(draft.color);
@@ -201,7 +201,7 @@ export function ChatDatesPanel({ channelId, onBack }: ChatDatesPanelProps) {
 
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground">Theme</p>
-              <div className={cn('flex gap-3 overflow-x-auto px-0.5 py-1.5', SCROLLER)}>
+              <div className={cn('flex gap-3 overflow-x-auto px-1 py-2.5', SCROLLER)}>
                 {ACCENTS.map((a) => {
                   const selected = (draft.color ?? 'rose') === a.id;
                   return (
@@ -217,7 +217,7 @@ export function ChatDatesPanel({ channelId, onBack }: ChatDatesPanelProps) {
                     >
                       <span
                         className={cn(
-                          'flex size-9 items-center justify-center rounded-full ring-2 ring-offset-2 ring-offset-popover transition-all',
+                          'flex size-9 items-center justify-center rounded-full ring-2 transition-all',
                           selected ? 'ring-foreground' : 'ring-transparent',
                         )}
                         style={{ backgroundColor: a.primary }}
