@@ -24,6 +24,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.6.0',
+    date: '2026-06-23',
+    title: 'Important dates',
+    changes: [
+      { kind: 'new', text: 'Chat Details → Important dates: keep anniversaries, birthdays and trips together with a countdown to each.' },
+    ],
+  },
+  {
     version: '0.5.0',
     date: '2026-06-23',
     title: 'Hidden vault',

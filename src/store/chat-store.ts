@@ -75,11 +75,13 @@ import {
   storeBackground,
   type ChatBackground,
 } from '@/lib/chat-theme';
+import { loadDates, storeDates } from '@/lib/important-dates';
 import {
   DM_CHANNEL_ID,
   type AcceptedNotice,
   type Channel,
   type CollabInvite,
+  type ImportantDate,
   type Message,
   type Profile,
   type UserId,
@@ -320,6 +322,48 @@ interface ChatStore {
   shareChannelWithConnection: (channelId: string, connectionId: string) => void;
   /** pull shared channels/items for a connection and adopt them locally */
   syncConvLocal: (connectionId: string) => Promise<void>;
+
+  // ── shared "Important dates" agenda (per conversation) ───────────────────
+  /** important dates per channel, lazily loaded from localStorage */
+  datesByChannel: Record<string, ImportantDate[]>;
+  /** load this channel's dates into state if not already present */
+  loadDatesFor: (channelId: string) => void;
+  /** add/edit a date and publish it to the encrypted meta overlay */
+  setImportantDate: (channelId: string, entry: ImportantDate) => void;
+  /** remove a date and publish the tombstone */
+  removeImportantDate: (channelId: string, id: string) => void;
+}
+
+type DateOverlayValue =
+  | { title: string; date: number; icon: string; repeatYearly?: boolean; at: number }
+  | { deleted: true; at: number }
+  | null;
+
+/** apply an incoming `date:<id>` overlay row to a channel's agenda —
+ *  last-writer-wins by the embedded `at`, mirrors the Memories pin handler */
+function applyDateOverlay(
+  get: () => ChatStore,
+  set: (partial: Partial<ChatStore>) => void,
+  channelId: string,
+  id: string,
+  rawValue: unknown,
+): void {
+  const v = rawValue as DateOverlayValue;
+  const at = v?.at ?? Date.now();
+  const list = get().datesByChannel[channelId] ?? loadDates(channelId);
+  const existing = list.find((d) => d.id === id);
+  if (existing && existing.updatedAt > at) return;
+  const next =
+    v && 'deleted' in v
+      ? list.filter((d) => d.id !== id)
+      : v
+        ? [
+            ...list.filter((d) => d.id !== id),
+            { id, title: v.title, date: v.date, icon: v.icon, repeatYearly: v.repeatYearly, updatedAt: at },
+          ]
+        : list.filter((d) => d.id !== id);
+  storeDates(channelId, next);
+  set({ datesByChannel: { ...get().datesByChannel, [channelId]: next } });
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -349,6 +393,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   connections: [],
   connectionAccepts: [],
   connectionReadAt: {},
+  datesByChannel: {},
 
   hydrate: async () => {
     if (!persistent || get().hydrated || !isPaired()) return;
@@ -434,6 +479,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           if (current && Math.max(current.pinnedAt ?? 0, 0) <= at) {
             get().applyMemoryLocal(id, !!v, v?.c ?? undefined, at);
           }
+        } else if (row.key.startsWith('date:')) {
+          applyDateOverlay(get, set, DM_CHANNEL_ID, row.key.slice('date:'.length), row.value);
         } else if (row.key === 'chat-bg') {
           // shared wallpaper — last-writer-wins by the embedded timestamp, so a
           // stale row (or our own echo) never clobbers a newer selection
@@ -801,6 +848,45 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (persistent && updated) void putMessage(updated);
   },
 
+  loadDatesFor: (channelId) => {
+    if (get().datesByChannel[channelId]) return;
+    set({ datesByChannel: { ...get().datesByChannel, [channelId]: loadDates(channelId) } });
+  },
+
+  setImportantDate: (channelId, entry) => {
+    const list = get().datesByChannel[channelId] ?? loadDates(channelId);
+    const next = [...list.filter((d) => d.id !== entry.id), entry];
+    storeDates(channelId, next);
+    set({ datesByChannel: { ...get().datesByChannel, [channelId]: next } });
+    if (!persistent) return;
+    const value = {
+      title: entry.title,
+      date: entry.date,
+      icon: entry.icon,
+      repeatYearly: entry.repeatYearly,
+      at: entry.updatedAt,
+    };
+    if (channelId !== DM_CHANNEL_ID && get().connectionPeers[channelId]) {
+      void uploadConvMeta(channelId, `date:${entry.id}`, value);
+    } else {
+      void uploadMeta(`date:${entry.id}`, value);
+    }
+  },
+
+  removeImportantDate: (channelId, id) => {
+    const list = get().datesByChannel[channelId] ?? loadDates(channelId);
+    const next = list.filter((d) => d.id !== id);
+    storeDates(channelId, next);
+    set({ datesByChannel: { ...get().datesByChannel, [channelId]: next } });
+    if (!persistent) return;
+    const value = { deleted: true as const, at: Date.now() };
+    if (channelId !== DM_CHANNEL_ID && get().connectionPeers[channelId]) {
+      void uploadConvMeta(channelId, `date:${id}`, value);
+    } else {
+      void uploadMeta(`date:${id}`, value);
+    }
+  },
+
   hideMessages: (ids, hidden) => {
     const idSet = new Set(ids);
     set((s) => ({
@@ -1111,6 +1197,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           if (current && Math.max(current.pinnedAt ?? 0, 0) <= at) {
             get().applyMemoryLocal(id, !!v, v?.c ?? undefined, at);
           }
+        } else if (row.key.startsWith('date:')) {
+          applyDateOverlay(get, set, connectionId, row.key.slice('date:'.length), row.value);
         } else if (row.key === 'chat-bg') {
           // shared wallpaper for this connection — last-writer-wins by the
           // embedded timestamp (a stale row / our own echo never clobbers a

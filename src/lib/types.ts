@@ -117,6 +117,21 @@ export interface Message {
   order?: number;
 }
 
+/** a shared anniversary/birthday/important date for a conversation, synced via
+ *  the encrypted meta overlay (key `date:<id>`) — same model as Memories pins */
+export interface ImportantDate {
+  id: string;
+  title: string;
+  /** epoch ms of the date (midnight local time) */
+  date: number;
+  /** icon id from lib/important-dates.ts DATE_ICONS — never an emoji */
+  icon: string;
+  /** anniversaries/birthdays: the countdown re-targets next year once passed */
+  repeatYearly?: boolean;
+  /** epoch ms last edited — resolves last-writer-wins on sync */
+  updatedAt: number;
+}
+
 export type Screen =
   | 'lock'
   | 'sign-in'

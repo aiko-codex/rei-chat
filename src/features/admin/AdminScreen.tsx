@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Check, ChevronLeft, Copy } from 'lucide-react';
+import { Check, ChevronLeft, Copy, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,23 @@ import {
   setAccountDisabled,
   type AdminAccount,
 } from '@/lib/admin-api';
+
+// Temp passwords are NOT stored on the server (it only keeps a hash), so to let
+// the admin re-copy a new account's password from the list later, we cache the
+// just-created temp passwords locally on THIS admin device, keyed by username.
+// They're only valid until the user does their first login + sets a real
+// password, at which point the entry is pruned.
+const TEMP_PW_KEY = 'rei-admin-temp-pw';
+function readTempPws(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(TEMP_PW_KEY) || '{}') as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+function writeTempPws(map: Record<string, string>): void {
+  localStorage.setItem(TEMP_PW_KEY, JSON.stringify(map));
+}
 
 /**
  * Minimalist super-admin panel: gate on the admin password, then create / list
@@ -30,10 +47,24 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   // the just-created credentials, shown with copy buttons (the plaintext temp
   // password exists only here — the server stores a hash, never the password)
   const [created, setCreated] = useState<{ username: string; password: string } | null>(null);
+  const [tempPws, setTempPws] = useState<Record<string, string>>(readTempPws);
 
   const refresh = async (adminPw: string) => {
     const { accounts } = await listAccounts(adminPw);
     setAccounts(accounts);
+    // prune cached temp passwords for accounts that have set their real password
+    const map = readTempPws();
+    let changed = false;
+    for (const a of accounts) {
+      if (!a.mustSetPassword && map[a.username]) {
+        delete map[a.username];
+        changed = true;
+      }
+    }
+    if (changed) {
+      writeTempPws(map);
+      setTempPws(map);
+    }
   };
 
   const unlock = async (e: React.FormEvent) => {
@@ -63,6 +94,9 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
         tempPassword,
       });
       setCreated({ username: res.username, password: tempPassword });
+      const map = { ...readTempPws(), [res.username]: tempPassword };
+      writeTempPws(map);
+      setTempPws(map);
       setUsername('');
       setDisplayName('');
       setEmail('');
@@ -188,9 +222,20 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
                         onClick={() => void copyText(a.username, 'Username copied')}
                         className='rounded-full border p-1.5 text-muted-foreground hover:bg-muted [&_svg]:size-3.5'
                         aria-label='Copy username'
+                        title='Copy username'
                       >
                         <Copy />
                       </button>
+                      {tempPws[a.username] && (
+                        <button
+                          onClick={() => void copyText(tempPws[a.username], 'Password copied')}
+                          className='rounded-full border p-1.5 text-muted-foreground hover:bg-muted [&_svg]:size-3.5'
+                          aria-label='Copy password'
+                          title='Copy temporary password'
+                        >
+                          <KeyRound />
+                        </button>
+                      )}
                       <button
                         onClick={() => toggleDisabled(a)}
                         className='rounded-full border px-3 py-1 text-xs hover:bg-muted'

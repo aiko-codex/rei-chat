@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, Heart, Images, Lock, Palette, Search, ShieldCheck } from 'lucide-react';
+import { CalendarHeart, ChevronLeft, ChevronRight, Heart, Images, Lock, Palette, Search, ShieldCheck } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,8 +22,9 @@ import { ChatSearchPanel } from './ChatSearchPanel';
 import { ChatThemePanel } from './ChatThemePanel';
 import { ChatGalleryPanel } from './ChatGalleryPanel';
 import { ChatMemoriesPanel } from './ChatMemoriesPanel';
+import { ChatDatesPanel } from './ChatDatesPanel';
 
-type Panel = 'search' | 'theme' | 'gallery' | 'memories' | 'vault';
+type Panel = 'search' | 'theme' | 'gallery' | 'memories' | 'vault' | 'dates';
 
 interface ChatDetailsScreenProps {
   onBack: () => void;
@@ -212,6 +213,13 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
             testId="details-memories"
           />
           <DetailRow
+            icon={<CalendarHeart className="size-5" />}
+            label="Important dates"
+            hint="Anniversaries, birthdays & trips"
+            onClick={() => setPanel('dates')}
+            testId="details-dates"
+          />
+          <DetailRow
             icon={<Images className="size-5" />}
             label="Media & links"
             hint="Photos, videos and links shared here"
@@ -264,6 +272,9 @@ export function ChatDetailsScreen({ onBack, onJump, channelId = DM_CHANNEL_ID }:
                 onBack={() => setPanel(null)}
                 onJump={onJump}
               />
+            )}
+            {panel === 'dates' && (
+              <ChatDatesPanel channelId={channelId} onBack={() => setPanel(null)} />
             )}
             {panel === 'gallery' && (
               <ChatGalleryPanel
