@@ -43,7 +43,7 @@ export function MoodPickerSheet({ open, onClose, current, onSet }: MoodPickerShe
   return (
     <Drawer open={open} onOpenChange={(o) => !o && onClose()} repositionInputs={false}>
       <DrawerContent data-testid="mood-picker-sheet">
-        <DrawerHeader className="pb-1">
+        <DrawerHeader className="pb-3">
           <DrawerTitle className="text-base">How are you feeling?</DrawerTitle>
         </DrawerHeader>
 
@@ -104,9 +104,16 @@ export function MoodPickerSheet({ open, onClose, current, onSet }: MoodPickerShe
 
           <div className="flex gap-2 pt-1">
             {current && (
-              <Button variant="outline" className="cursor-pointer rounded-xl" onClick={clear} data-testid="mood-clear-btn">
-                Clear
-              </Button>
+              <motion.div whileTap={{ scale: 0.97 }}>
+                <Button
+                  variant="outline"
+                  className="h-11 cursor-pointer rounded-xl text-muted-foreground"
+                  onClick={clear}
+                  data-testid="mood-clear-btn"
+                >
+                  Clear
+                </Button>
+              </motion.div>
             )}
             <motion.div className="flex-1" whileTap={{ scale: 0.97 }}>
               <Button className="h-11 w-full cursor-pointer rounded-xl" onClick={save} data-testid="mood-save-btn">
