@@ -51,6 +51,12 @@ export function MoodBadge({ mood, name, className }: MoodBadgeProps) {
             className ??
             'absolute -right-0.5 -top-0.5 z-10 flex size-5 cursor-pointer items-center justify-center rounded-full bg-background ring-2 ring-background'
           }
+          // these fluent-emoji icons fill via SVG <linearGradient> defs; on
+          // first paint inside a CSS-transformed (scale) ancestor, mobile
+          // Safari/WebKit sometimes renders the gradient as solid black until
+          // a later forced repaint (e.g. navigating away and back). Forcing
+          // its own compositing layer from the start avoids that paint bug.
+          style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
         >
           <Icon size="0.95rem" />
         </motion.button>
