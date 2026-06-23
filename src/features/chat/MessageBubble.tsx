@@ -4,6 +4,7 @@ import { Check, CheckCheck, CircleAlert, FileIcon, ImageIcon, MapPin, Mic, Pause
 import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
 import { useChatStore } from '@/store/chat-store';
+import { LiveLocationContent } from './LiveLocationContent';
 import type { MediaAttachment, Message } from '@/lib/types';
 
 function formatTime(ts: number) {
@@ -272,6 +273,8 @@ interface MessageBubbleProps {
   onDoubleTapReact?: (message: Message) => void;
   /** swipe right on the bubble to quick-reply (iMessage convention) */
   onSwipeReply?: (message: Message) => void;
+  /** stop an in-progress live location share (sender only) */
+  onStopLiveLocation?: (message: Message) => void;
   /** play the spring "pop" entrance — only for genuinely new messages, not for
    *  older rows re-mounted by windowed scrolling / jump-to-quote */
   animateIn?: boolean;
@@ -293,6 +296,7 @@ export function MessageBubble({
   onRetry,
   onDoubleTapReact,
   onSwipeReply,
+  onStopLiveLocation,
   animateIn = true,
 }: MessageBubbleProps) {
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -344,7 +348,7 @@ export function MessageBubble({
   // image/video with no caption/reply render as a plain media tile (no colored
   // frame), Instagram-style, with the time overlaid on the media
   const isVisualMedia = message.media?.kind === 'image' || message.media?.kind === 'video';
-  const plainMedia = isVisualMedia && !message.text && !replyTo;
+  const plainMedia = (isVisualMedia || !!message.liveLocation) && !message.text && !replyTo;
 
   const statusIcon = !isMine ? null : message.status === 'failed' ? (
     <CircleAlert className="size-3" data-testid={`status-failed-${message.id}`} />
@@ -456,12 +460,16 @@ export function MessageBubble({
           highlighted && 'rounded-2xl ring-2 ring-ring transition-shadow',
         )}
       >
-        {message.media && (
-          <MediaContent
-            media={message.media}
-            isMine={isMine}
-            onOpenImage={onOpenImage ? () => onOpenImage(message) : undefined}
-          />
+        {message.liveLocation ? (
+          <LiveLocationContent message={message} isMine={isMine} onStop={onStopLiveLocation} />
+        ) : (
+          message.media && (
+            <MediaContent
+              media={message.media}
+              isMine={isMine}
+              onOpenImage={onOpenImage ? () => onOpenImage(message) : undefined}
+            />
+          )
         )}
         {showProgress && isOverlayMedia && (
           <div className="absolute inset-x-2 bottom-2 flex items-center gap-2" data-testid="upload-progress">
@@ -495,7 +503,8 @@ export function MessageBubble({
         {message.text && <p>{message.text}</p>}
         {plainMedia ? (
           // overlay time+status on the media; hidden while the upload bar shows
-          !(showProgress && isOverlayMedia) && (
+          // (and never for a live-location card — its own footer covers status)
+          !message.liveLocation && !(showProgress && isOverlayMedia) && (
             <span className="absolute right-2 bottom-2 flex items-center gap-1 rounded-full bg-black/45 px-1.5 py-0.5 text-[10px] leading-none text-white backdrop-blur-sm">
               {formatTime(message.sentAt)}
               {statusIcon}

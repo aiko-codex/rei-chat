@@ -115,6 +115,22 @@ export interface Message {
   repeat?: 'daily' | 'weekly';
   /** todo: manual sort position (assigned on first drag-reorder) */
   order?: number;
+  /** an active/ended live location share (synced via the meta overlay, key
+   *  `loc:<id>`) — the message itself is sent once; position updates patch
+   *  this field in place without re-sending the whole message */
+  liveLocation?: {
+    lat: number;
+    lng: number;
+    startedAt: number;
+    /** epoch ms it auto-stops; "Until I stop" uses a far-future sentinel */
+    expiresAt: number;
+    /** sender manually stopped sharing */
+    stoppedAt?: number;
+    /** true while the sender's app is backgrounded — updates have frozen.
+     *  Broadcast explicitly by the sender rather than guessed from staleness,
+     *  since only the sender's device knows its own foreground state. */
+    paused?: boolean;
+  };
 }
 
 /** a shared anniversary/birthday/important date for a conversation, synced via

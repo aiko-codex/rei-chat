@@ -36,6 +36,8 @@ import { currentUserId } from '@/lib/mock-data';
 import { useChatStore } from '@/store/chat-store';
 import { useCallStore } from '@/store/call-store';
 import { backgroundCss } from '@/lib/chat-theme';
+import { expiresAtFor } from '@/lib/live-location';
+import { pushLiveLocationNow, startLiveLocationWatch, stopLiveLocationWatch } from '@/lib/live-location-service';
 import { DM_CHANNEL_ID, type MediaAttachment, type Message } from '@/lib/types';
 
 interface ChatScreenProps {
@@ -72,6 +74,7 @@ export function ChatScreen({
     const upsert = useChatStore((s) => s.upsert);
     const setReaction = useChatStore((s) => s.setReaction);
     const setMemory = useChatStore((s) => s.setMemory);
+    const setLiveLocation = useChatStore((s) => s.setLiveLocation);
     const removeLocal = useChatStore((s) => s.remove);
     const markSeen = useChatStore((s) => s.markSeen);
 
@@ -339,6 +342,84 @@ export function ChatScreen({
         setReplyTarget(null);
     };
 
+    // live location share: the message (with its starting position) goes
+    // through the normal send path once; position updates patch it in place
+    // via the store's encrypted meta overlay (no re-send of the whole message)
+    const sendLiveLocation = (durationMs: number, coords: { lat: number; lng: number }) => {
+        const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const startedAt = Date.now();
+        const message: Message = {
+            id,
+            channelId,
+            senderId: currentUserId,
+            sentAt: startedAt,
+            status: 'sent',
+            liveLocation: {
+                lat: coords.lat,
+                lng: coords.lng,
+                startedAt,
+                expiresAt: expiresAtFor(durationMs, startedAt),
+                paused: false,
+            },
+        };
+        upsert(message);
+        if (isConnection) {
+            sendPeerMessage(message);
+            void storeConv(message);
+        } else if (isDm) {
+            sendPeerMessage(message);
+            if (SIGNAL_URL) void storeOnServer(message);
+        }
+    };
+
+    const stopLiveLocation = (message: Message) => {
+        setLiveLocation(channelId, message.id, { stoppedAt: Date.now() });
+        stopLiveLocationWatch();
+    };
+
+    // id of my own still-active live share in this channel (if any) — drives
+    // the watch effect below; re-runs only when which share is active changes
+    const myActiveLiveLocationId = messages.find(
+        (m) => m.senderId === currentUserId && m.liveLocation && !m.liveLocation.stoppedAt,
+    )?.id;
+
+    // drive the geolocation watch for that share — updates only flow while
+    // this device's app is foregrounded (no reliable background geolocation
+    // in a browser/PWA); leaving the chat also stops the watch (a known
+    // limitation, surfaced honestly via the `paused` flag the peer sees).
+    useEffect(() => {
+        const mine = messages.find((m) => m.id === myActiveLiveLocationId);
+        if (!mine?.liveLocation) return;
+        const { id, liveLocation } = mine;
+
+        const expireTimer = setTimeout(() => {
+            stopLiveLocationWatch();
+            setLiveLocation(channelId, id, { stoppedAt: Date.now() });
+        }, Math.max(0, liveLocation.expiresAt - Date.now()));
+
+        const push = (lat: number, lng: number) => setLiveLocation(channelId, id, { lat, lng, paused: false });
+        startLiveLocationWatch(push);
+
+        const onVisibility = () => {
+            if (document.visibilityState === 'hidden') {
+                stopLiveLocationWatch();
+                setLiveLocation(channelId, id, { paused: true });
+            } else {
+                setLiveLocation(channelId, id, { paused: false });
+                pushLiveLocationNow(push);
+                startLiveLocationWatch(push);
+            }
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+
+        return () => {
+            clearTimeout(expireTimer);
+            document.removeEventListener('visibilitychange', onVisibility);
+            stopLiveLocationWatch();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [myActiveLiveLocationId, channelId]);
+
     const react = (emoji: string) => {
         if (!actionTarget) return;
         // tapping the same emoji again removes your reaction
@@ -534,6 +615,7 @@ export function ChatScreen({
                 onOpenImage={setLightboxTarget}
                 onRetry={retry}
                 onDoubleTapReact={isDm || isConnection ? toggleDefaultReaction : undefined}
+                onStopLiveLocation={stopLiveLocation}
                 onSwipeReply={(m) => {
                     setEditTarget(null);
                     setReplyTarget(m);
@@ -580,6 +662,7 @@ export function ChatScreen({
                 onSend={send}
                 onSendMedia={sendMedia}
                 onSendRemoteMedia={sendRemoteMedia}
+                onShareLiveLocation={isDm || isConnection ? sendLiveLocation : undefined}
                 onTyping={isDm ? sendPeerTyping : isConnection ? sendConnTyping : undefined}
                 replyTo={replyTarget}
                 replyToName={

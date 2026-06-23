@@ -24,6 +24,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.7.0',
+    date: '2026-06-23',
+    title: 'Live location sharing',
+    changes: [
+      { kind: 'new', text: 'Share your live location from the location picker for 15 min, 1 hour, 8 hours, or until you stop — she sees it move on a live map right in the chat.' },
+    ],
+  },
+  {
     version: '0.6.1',
     date: '2026-06-23',
     title: 'Important dates polish',

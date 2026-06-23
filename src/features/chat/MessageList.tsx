@@ -85,6 +85,8 @@ interface MessageListProps {
   onDoubleTapReact?: (message: Message) => void;
   /** swipe a message right to quick-reply */
   onSwipeReply?: (message: Message) => void;
+  /** stop an in-progress live location share (sender only) */
+  onStopLiveLocation?: (message: Message) => void;
   /** fired when the user is genuinely viewing the latest message (at the bottom) */
   onViewedBottom?: () => void;
   /** shown centered when the channel has no messages yet */
@@ -106,6 +108,7 @@ export function MessageList({
   onRetry,
   onDoubleTapReact,
   onSwipeReply,
+  onStopLiveLocation,
   onViewedBottom,
   emptyState,
   backgroundStyle,
@@ -339,6 +342,7 @@ export function MessageList({
                 onRetry={onRetry}
                 onDoubleTapReact={onDoubleTapReact}
                 onSwipeReply={onSwipeReply}
+                onStopLiveLocation={onStopLiveLocation}
                 animateIn={msg.sentAt > mountedAt.current}
               />
             </div>

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import leafletImage from 'leaflet-image';
 import 'leaflet/dist/leaflet.css';
-import { MapPin } from 'lucide-react';
+import { motion } from 'motion/react';
+import { MapPin, Navigation } from 'lucide-react';
 import { toast } from 'sonner';
 import {
     Dialog,
@@ -10,21 +11,26 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
+import { LIVE_LOCATION_DURATIONS } from '@/lib/live-location';
 import type { MediaAttachment } from '@/lib/types';
 
 interface LocationModalProps {
     open: boolean;
     onClose: () => void;
     onSend: (media: MediaAttachment, blob: Blob) => void;
+    /** start a live location share for the given duration (0 = until stopped) */
+    onShareLive?: (durationMs: number, coords: { lat: number; lng: number }) => void;
 }
 
-export function LocationModal({ open, onClose, onSend }: LocationModalProps) {
+export function LocationModal({ open, onClose, onSend, onShareLive }: LocationModalProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
     const [status, setStatus] = useState<'locating' | 'ready' | 'error'>('locating');
     const [busy, setBusy] = useState(false);
+    const [durationSheet, setDurationSheet] = useState(false);
 
     // ask for the device location when opened
     useEffect(() => {
@@ -105,8 +111,19 @@ export function LocationModal({ open, onClose, onSend }: LocationModalProps) {
         });
     };
 
+    const pickDuration = (ms: number) => {
+        if (!coords || !onShareLive) return;
+        // share from the map's current center (the user may have panned to fine-tune)
+        const c = mapRef.current?.getCenter();
+        onShareLive(ms, c ? { lat: c.lat, lng: c.lng } : coords);
+        setDurationSheet(false);
+        onClose();
+        toast.success('Sharing your live location');
+    };
+
     return (
-        <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+        <>
+        <Dialog open={open && !durationSheet} onOpenChange={(o) => !o && onClose()}>
             <DialogContent className="max-w-md gap-3 p-4">
                 <DialogHeader>
                     <DialogTitle>Share location</DialogTitle>
@@ -133,12 +150,53 @@ export function LocationModal({ open, onClose, onSend }: LocationModalProps) {
                         <p className="text-center text-[11px] text-muted-foreground">
                             Pan to adjust · sent as an end-to-end encrypted snapshot
                         </p>
-                        <Button onClick={send} disabled={busy} className="w-full rounded-full">
-                            {busy ? 'Sending…' : 'Send this location'}
-                        </Button>
+                        <motion.div whileTap={{ scale: 0.98 }}>
+                            <Button onClick={send} disabled={busy} className="w-full cursor-pointer rounded-full">
+                                {busy ? 'Sending…' : 'Send this location'}
+                            </Button>
+                        </motion.div>
+                        {onShareLive && (
+                            <motion.div whileTap={{ scale: 0.98 }}>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setDurationSheet(true)}
+                                    disabled={busy}
+                                    className="w-full cursor-pointer rounded-full"
+                                    data-testid="share-live-location-btn"
+                                >
+                                    <Navigation className="size-4" /> Share live location
+                                </Button>
+                            </motion.div>
+                        )}
                     </>
                 )}
             </DialogContent>
         </Dialog>
+
+        <Drawer open={durationSheet} onOpenChange={setDurationSheet}>
+            <DrawerContent data-testid="live-location-duration-sheet">
+                <DrawerHeader className="pb-1">
+                    <DrawerTitle className="text-base">Share live location for…</DrawerTitle>
+                </DrawerHeader>
+                <div className="flex flex-col gap-2 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2">
+                    {LIVE_LOCATION_DURATIONS.map((d) => (
+                        <motion.button
+                            key={d.label}
+                            type="button"
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => pickDuration(d.ms)}
+                            data-testid={`live-duration-${d.ms}`}
+                            className="flex h-12 cursor-pointer items-center justify-between rounded-xl border px-4 text-sm font-medium hover:bg-muted"
+                        >
+                            {d.label}
+                        </motion.button>
+                    ))}
+                    <p className="px-1 pt-1 text-center text-[11px] text-muted-foreground">
+                        Updates while the app is open · stop anytime from the chat
+                    </p>
+                </div>
+            </DrawerContent>
+        </Drawer>
+        </>
     );
 }

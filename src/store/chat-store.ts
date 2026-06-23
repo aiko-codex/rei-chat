@@ -332,6 +332,15 @@ interface ChatStore {
   setImportantDate: (channelId: string, entry: ImportantDate) => void;
   /** remove a date and publish the tombstone */
   removeImportantDate: (channelId: string, id: string) => void;
+
+  /** patch a live-location message's position/paused/stopped state, locally
+   *  and via the encrypted meta overlay (key `loc:<id>`) — the message itself
+   *  is sent once through the normal message path; this only updates it */
+  setLiveLocation: (
+    channelId: string,
+    id: string,
+    patch: Partial<NonNullable<Message['liveLocation']>>,
+  ) => void;
 }
 
 type DateOverlayValue =
@@ -364,6 +373,32 @@ function applyDateOverlay(
         : list.filter((d) => d.id !== id);
   storeDates(channelId, next);
   set({ datesByChannel: { ...get().datesByChannel, [channelId]: next } });
+}
+
+// last-applied overlay `at` per live-location message id — resolves
+// last-writer-wins without polluting the persisted Message shape. Resets on
+// reload (worst case: one redundant re-application of the same row).
+const liveLocAtCache = new Map<string, number>();
+
+type LiveLocationOverlayValue = (NonNullable<Message['liveLocation']> & { at: number }) | null;
+
+function applyLiveLocationOverlay(
+  get: () => ChatStore,
+  set: (partial: Partial<ChatStore>) => void,
+  id: string,
+  rawValue: unknown,
+): void {
+  const v = rawValue as LiveLocationOverlayValue;
+  if (!v) return;
+  const lastAt = liveLocAtCache.get(id) ?? 0;
+  if (v.at <= lastAt) return;
+  liveLocAtCache.set(id, v.at);
+  const current = get().messages.find((m) => m.id === id);
+  if (!current) return; // message hasn't arrived via history yet — next sync catches up
+  const { at: _at, ...liveLocation } = v;
+  const next = { ...current, liveLocation };
+  set({ messages: get().messages.map((m) => (m.id === id ? next : m)) });
+  if (persistent) void putMessage(next);
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -481,6 +516,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           }
         } else if (row.key.startsWith('date:')) {
           applyDateOverlay(get, set, DM_CHANNEL_ID, row.key.slice('date:'.length), row.value);
+        } else if (row.key.startsWith('loc:')) {
+          applyLiveLocationOverlay(get, set, row.key.slice('loc:'.length), row.value);
         } else if (row.key === 'chat-bg') {
           // shared wallpaper — last-writer-wins by the embedded timestamp, so a
           // stale row (or our own echo) never clobbers a newer selection
@@ -888,6 +925,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
+  setLiveLocation: (channelId, id, patch) => {
+    const current = get().messages.find((m) => m.id === id);
+    if (!current) return;
+    const merged = {
+      ...(current.liveLocation ?? { lat: 0, lng: 0, startedAt: Date.now(), expiresAt: Date.now() }),
+      ...patch,
+    };
+    const next = { ...current, liveLocation: merged };
+    set({ messages: get().messages.map((m) => (m.id === id ? next : m)) });
+    if (persistent) void putMessage(next);
+    if (!persistent) return;
+    const at = Date.now();
+    liveLocAtCache.set(id, at);
+    const value = { ...merged, at };
+    if (channelId !== DM_CHANNEL_ID && get().connectionPeers[channelId]) {
+      void uploadConvMeta(channelId, `loc:${id}`, value);
+    } else {
+      void uploadMeta(`loc:${id}`, value);
+    }
+  },
+
   hideMessages: (ids, hidden) => {
     const idSet = new Set(ids);
     set((s) => ({
@@ -1200,6 +1258,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           }
         } else if (row.key.startsWith('date:')) {
           applyDateOverlay(get, set, connectionId, row.key.slice('date:'.length), row.value);
+        } else if (row.key.startsWith('loc:')) {
+          applyLiveLocationOverlay(get, set, row.key.slice('loc:'.length), row.value);
         } else if (row.key === 'chat-bg') {
           // shared wallpaper for this connection — last-writer-wins by the
           // embedded timestamp (a stale row / our own echo never clobbers a

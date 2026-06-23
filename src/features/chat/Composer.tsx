@@ -58,6 +58,8 @@ interface ComposerProps {
     onSendMedia: (media: MediaAttachment, blob: Blob) => void;
     /** remote (Tenor) media — no blob, the url rides the message frame as-is */
     onSendRemoteMedia: (media: MediaAttachment) => void;
+    /** start a live location share (omit to hide the option, e.g. unsupported channel) */
+    onShareLiveLocation?: (durationMs: number, coords: { lat: number; lng: number }) => void;
     /** typing feedback for the peer; throttling happens upstream */
     onTyping?: (typing: boolean) => void;
     replyTo: Message | null;
@@ -73,6 +75,7 @@ export function Composer({
     onSend,
     onSendMedia,
     onSendRemoteMedia,
+    onShareLiveLocation,
     onTyping,
     replyTo,
     replyToName,
@@ -354,7 +357,12 @@ export function Composer({
                     <DrawModal open onClose={() => setSheet(null)} onSend={onSendMedia} />
                 )}
                 {sheet === 'location' && (
-                    <LocationModal open onClose={() => setSheet(null)} onSend={onSendMedia} />
+                    <LocationModal
+                        open
+                        onClose={() => setSheet(null)}
+                        onSend={onSendMedia}
+                        onShareLive={onShareLiveLocation}
+                    />
                 )}
             </Suspense>
         </footer>
