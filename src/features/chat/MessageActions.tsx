@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Copy, Pencil, Pin, PinOff, Plus, Reply, Trash2, Undo2 } from 'lucide-react';
+import { Copy, MapPin, Pencil, Pin, PinOff, Plus, Reply, Trash2, Undo2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/store/chat-store';
 import { ReactionEmojiSheet } from './ReactionEmojiSheet';
@@ -238,7 +238,11 @@ export function MessageActions({
             )}
             onClick={(e) => e.stopPropagation()}
           >
-            {message.media ? (
+            {message.liveLocation ? (
+              <p className="flex items-center gap-1.5 italic opacity-80">
+                <MapPin className="size-4" /> Live location
+              </p>
+            ) : message.media ? (
               message.media.kind === 'image' ? (
                 <img src={message.media.url} alt="" className="max-h-40 rounded-xl object-cover" />
               ) : (

@@ -90,7 +90,11 @@ export function LiveLocationContent({ message, isMine, onStop }: LiveLocationCon
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ type: 'spring', stiffness: 460, damping: 32 }}
-      className="w-64 overflow-hidden rounded-2xl ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15"
+      // isolate: Leaflet's internal panes carry high z-index values (up to
+      // 700) for markers/popups; without a stacking context of its own here,
+      // those panes can paint above later siblings — e.g. the long-press
+      // action menu overlay — instead of staying contained in this bubble.
+      className="isolate w-64 overflow-hidden rounded-2xl ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15"
       data-testid={`live-location-${message.id}`}
     >
       <div ref={containerRef} className={cn('h-36 w-full', status === 'ended' && 'grayscale')} />
