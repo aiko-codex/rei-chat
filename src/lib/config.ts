@@ -21,6 +21,16 @@ export const VAPID_PUBLIC_KEY: string = import.meta.env.VITE_VAPID_PUBLIC_KEY ??
  */
 export const GIPHY_KEY: string = import.meta.env.VITE_GIPHY_KEY ?? '';
 
+/**
+ * Admin recovery escrow PUBLIC key (libsodium box public key, base64). At
+ * password-set the account recovery key is sealed (crypto_box_seal) to this
+ * key so the owner can recover a forgotten recovery key OFFLINE with the
+ * matching private key (which lives only on the owner's machine, never on the
+ * server). Empty = no admin escrow (recovery key is then the only fallback).
+ * Generate a keypair with `node tools/admin-recover.mjs keygen`.
+ */
+export const ADMIN_PUBLIC_KEY: string = import.meta.env.VITE_ADMIN_PUBLIC_KEY ?? '';
+
 import { getPairing } from './pairing';
 
 /**

@@ -1237,7 +1237,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           void (async () => {
             const existing = await getBlob(local.id);
             const blob =
-              existing ?? (await downloadConvMedia(connectionId, local.id, local.media!.mimeType));
+              existing ??
+              (await downloadConvMedia(connectionId, local.id, local.media!.mimeType, local.media!.chunked));
             if (!blob) return;
             if (!existing) await putBlob(local.id, blob);
             get().upsert({ ...local, media: { ...local.media!, url: URL.createObjectURL(blob) } });

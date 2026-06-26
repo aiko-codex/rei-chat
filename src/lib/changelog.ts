@@ -24,6 +24,40 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.11.0',
+    date: '2026-06-26',
+    title: 'Pinch to zoom',
+    changes: [
+      { kind: 'new', text: 'Open a photo and pinch to zoom in and out, drag to pan around, and double-tap to zoom. Swipe down to close.' },
+    ],
+  },
+  {
+    version: '0.10.0',
+    date: '2026-06-26',
+    title: 'Faster, lighter media',
+    changes: [
+      { kind: 'improve', text: 'Photos and videos now send and load in small pieces — much lighter on memory and far more reliable, especially in the installed app.' },
+    ],
+  },
+  {
+    version: '0.9.1',
+    date: '2026-06-26',
+    title: 'Photos load reliably',
+    changes: [
+      { kind: 'fix', text: 'Photos and screenshots your partner sends no longer get stuck on “Loading…” in the installed app.' },
+    ],
+  },
+  {
+    version: '0.9.0',
+    date: '2026-06-24',
+    title: 'Password recovery',
+    changes: [
+      { kind: 'new', text: 'Set a recovery key when you pick your password — it lets you reset a forgotten password without losing any chats.' },
+      { kind: 'new', text: '“Forgot password?” on the sign-in screen resets your password with that recovery key.' },
+      { kind: 'new', text: 'Change your password anytime in Settings → Security — your chats stay intact.' },
+    ],
+  },
+  {
     version: '0.8.1',
     date: '2026-06-23',
     title: 'View profile photo',

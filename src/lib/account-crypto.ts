@@ -98,6 +98,16 @@ export function sealKeyTo(convKey: Uint8Array, recipientPubKeyB64: string): stri
   return toB64(sealed);
 }
 
+/**
+ * Seal an arbitrary string (e.g. the account recovery key) to a public key →
+ * base64. Used for admin escrow: only the holder of the matching OFFLINE
+ * private key can open it (crypto_box_seal_open).
+ */
+export function sealStringTo(value: string, recipientPubKeyB64: string): string {
+  const sealed = sodium.crypto_box_seal(sodium.from_string(value), fromB64(recipientPubKeyB64));
+  return toB64(sealed);
+}
+
 /** open a sealed conversation key with my keypair, or null on failure */
 export function openSealedKey(sealedB64: string, myKeys: KeyPair): Uint8Array | null {
   try {
@@ -149,4 +159,77 @@ export function decryptBytesWith(ciphertext: string, convKey: Uint8Array): Uint8
   } catch {
     return null;
   }
+}
+
+/**
+ * Decrypt RAW (nonce + box) bytes → plaintext bytes, or null. Same as
+ * decryptBytesWith but skips the base64 round-trip — the media-download path
+ * already holds the bytes as a Uint8Array, so encoding them to base64 just to
+ * decode them again wastes a multi-MB allocation (which can tip the
+ * memory-constrained iOS standalone-PWA WebView over). Uses subarray views so
+ * the nonce/box split allocates nothing.
+ */
+export function decryptBytesRawWith(raw: Uint8Array, convKey: Uint8Array): Uint8Array | null {
+  try {
+    const nl = sodium.crypto_secretbox_NONCEBYTES;
+    return sodium.crypto_secretbox_open_easy(raw.subarray(nl), raw.subarray(0, nl), convKey);
+  } catch {
+    return null;
+  }
+}
+
+// ── chunked / streamed media (crypto_secretstream) ──────────────────────────
+// For large media we encrypt the file as an ordered SEQUENCE of chunks instead
+// of one big blob. crypto_secretstream is the libsodium primitive built for
+// exactly this: a one-time `header`, then each chunk is authenticated and bound
+// to its position (so a dropped/reordered/forged chunk fails to decrypt). This
+// lets us upload/download in small pieces — tiny peak memory, no single huge
+// request — while staying fully E2E (the server only ever sees ciphertext).
+
+/**
+ * Create a streaming encryptor. Store `header` once (it travels in the
+ * manifest); feed plaintext chunks to push() IN ORDER, passing isLast=true for
+ * the final chunk. Each push() returns that chunk's ciphertext.
+ */
+export function createMediaEncryptor(key: Uint8Array): {
+  header: Uint8Array;
+  push: (chunk: Uint8Array, isLast: boolean) => Uint8Array;
+} {
+  const { state, header } = sodium.crypto_secretstream_xchacha20poly1305_init_push(key);
+  return {
+    header,
+    push(chunk: Uint8Array, isLast: boolean): Uint8Array {
+      const tag = isLast
+        ? sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL
+        : sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE;
+      return sodium.crypto_secretstream_xchacha20poly1305_push(state, chunk, null, tag);
+    },
+  };
+}
+
+/**
+ * Create a streaming decryptor for the given header, or null if the header is
+ * invalid. Feed ciphertext chunks to pull() IN ORDER; it returns the plaintext
+ * chunk, or null if a chunk is corrupt/forged/out-of-order.
+ */
+export function createMediaDecryptor(
+  header: Uint8Array,
+  key: Uint8Array,
+): { pull: (cipher: Uint8Array) => Uint8Array | null } | null {
+  let state: ReturnType<typeof sodium.crypto_secretstream_xchacha20poly1305_init_pull>;
+  try {
+    state = sodium.crypto_secretstream_xchacha20poly1305_init_pull(header, key);
+  } catch {
+    return null;
+  }
+  return {
+    pull(cipher: Uint8Array): Uint8Array | null {
+      try {
+        const r = sodium.crypto_secretstream_xchacha20poly1305_pull(state, cipher, null);
+        return r ? r.message : null;
+      } catch {
+        return null;
+      }
+    },
+  };
 }

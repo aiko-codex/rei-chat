@@ -268,7 +268,10 @@ export function ChatScreen({
             id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             channelId,
             senderId: currentUserId,
-            media,
+            // connection uploads ride the chunked (crypto_secretstream) path, so
+            // tag the message — the receiver's download then knows to reassemble
+            // chunks instead of fetching a single whole-file blob.
+            media: isConnection ? { ...media, chunked: true } : media,
             sentAt: Date.now(),
             status: 'sent',
             replyToId: replyTarget?.id,

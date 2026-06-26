@@ -3,17 +3,19 @@
  * Auth rides on `?token=` (Apache shared hosts often strip the Authorization
  * header, so we pass the token in the query/body instead).
  */
-import { SIGNAL_URL } from './config';
+import { ADMIN_PUBLIC_KEY, SIGNAL_URL } from './config';
 import {
   generateConversationKey,
   generateKeyPair,
   fromB64,
   openSealedKey,
   sealKeyTo,
+  sealStringTo,
   toB64,
   unwrapPrivateKey,
   wrapPrivateKey,
 } from './account-crypto';
+import { generateRecoveryKey, recoveryVerifier } from './recovery';
 import {
   clearSession,
   getAccount,
@@ -120,22 +122,117 @@ export async function verifyPassword(password: string): Promise<boolean> {
   }
 }
 
+/** the recovery blobs derived from a keypair + a fresh recovery key */
+function buildRecoveryBlobs(
+  privateKey: Uint8Array,
+  recoveryKey: string,
+): { recoveryWrap: string; recoveryVerifier: string; adminWrap?: string } {
+  const blobs: { recoveryWrap: string; recoveryVerifier: string; adminWrap?: string } = {
+    recoveryWrap: wrapPrivateKey(privateKey, recoveryKey),
+    recoveryVerifier: recoveryVerifier(recoveryKey),
+  };
+  // escrow the RECOVERY KEY (not the privkey) to the offline admin key, so the
+  // owner can recover a lost recovery key offline. Skipped if no admin key set.
+  if (ADMIN_PUBLIC_KEY) blobs.adminWrap = sealStringTo(recoveryKey, ADMIN_PUBLIC_KEY);
+  return blobs;
+}
+
 /**
  * First-login: generate the account keypair, set the real password, and upload
- * (pubkey plain, privkey wrapped under the new password). Requires a live
- * session from the temp-password login.
+ * (pubkey plain, privkey wrapped under the new password). Also generates a
+ * RECOVERY KEY — returned so the UI can show it once — and uploads the recovery
+ * blobs so a forgotten password can later be reset without losing data.
+ * Requires a live session from the temp-password login.
  */
-export async function setPassword(newPassword: string): Promise<void> {
+export async function setPassword(newPassword: string): Promise<{ recoveryKey: string }> {
   const kp = generateKeyPair();
   const wrapped = wrapPrivateKey(kp.privateKey, newPassword);
+  const recoveryKey = generateRecoveryKey();
+  const recovery = buildRecoveryBlobs(kp.privateKey, recoveryKey);
   await postJson('set_password', {
     newPassword,
     pubkey: toB64(kp.publicKey),
     wrappedPrivkey: wrapped,
+    ...recovery,
   });
   setKeys(kp);
   setWrappedPrivkey(wrapped);
   setMustSetPassword(false);
+  return { recoveryKey };
+}
+
+/**
+ * Set up (or rotate) account recovery for a logged-in user whose account
+ * predates recovery, or who wants a fresh recovery key. Re-wraps the private
+ * key the device already holds under a NEW recovery key. Returns the new key
+ * to show once. Keypair is untouched.
+ */
+export async function setupRecovery(): Promise<{ recoveryKey: string }> {
+  const keys = getKeys();
+  if (!keys) throw new Error('keys not loaded');
+  const recoveryKey = generateRecoveryKey();
+  const recovery = buildRecoveryBlobs(keys.privateKey, recoveryKey);
+  await postJson('setup_recovery', recovery);
+  return { recoveryKey };
+}
+
+/**
+ * Change the password for a logged-in user — KEYPAIR-PRESERVING. Re-wraps the
+ * SAME private key under the new password (the pubkey is unchanged, so sealed
+ * conversation keys keep working) and uploads it. Verifies the current password
+ * offline first.
+ */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const keys = getKeys();
+  if (!keys) throw new Error('keys not loaded');
+  if (!(await verifyPassword(currentPassword))) {
+    throw new Error('current password is incorrect');
+  }
+  const wrapped = wrapPrivateKey(keys.privateKey, newPassword);
+  await postJson('change_password', { newPassword, wrappedPrivkey: wrapped });
+  setWrappedPrivkey(wrapped);
+}
+
+interface ResetBeginResp {
+  userId: string;
+  pubkey: string;
+  recoveryWrap: string;
+}
+
+/**
+ * Forgotten-password reset (no session). Recovers the account private key with
+ * the RECOVERY KEY, re-wraps it under a new password, and uploads it — the
+ * keypair is preserved so no conversation data is lost. On success the new
+ * session token + account are stored, exactly like a fresh login.
+ *
+ * Throws 'recovery key is incorrect' if the key can't open the wrapped privkey.
+ */
+export async function resetPassword(
+  identifier: string,
+  recoveryKey: string,
+  newPassword: string,
+): Promise<void> {
+  // Step 1: fetch the wrapped privkey + pubkey for this account.
+  const begin = await postJson<ResetBeginResp>('reset_begin', { identifier });
+  // Step 2: locally unwrap the private key with the recovery key.
+  const priv = unwrapPrivateKey(begin.recoveryWrap, recoveryKey);
+  if (!priv) throw new Error('recovery key is incorrect');
+  // Step 3: re-wrap under the new password; prove recovery-key knowledge via the
+  // one-way verifier (the server never sees the recovery key itself).
+  const wrapped = wrapPrivateKey(priv, newPassword);
+  const data = await postJson<{ ok: boolean; token: string; account: Account }>('reset_finish', {
+    userId: begin.userId,
+    recoveryVerifier: recoveryVerifier(recoveryKey),
+    newPassword,
+    wrappedPrivkey: wrapped,
+  });
+  // adopt the new session + keys (same keypair → all sealed conv keys still open)
+  clearSession();
+  setToken(data.token);
+  setAccount(data.account);
+  setMustSetPassword(false);
+  setKeys({ publicKey: fromB64(begin.pubkey), privateKey: priv });
+  setWrappedPrivkey(wrapped);
 }
 
 /** live availability check for a candidate username (your own counts as free) */

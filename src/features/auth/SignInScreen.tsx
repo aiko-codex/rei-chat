@@ -12,9 +12,11 @@ import { Heart, Eye, EyeOff } from 'lucide-react';
 export function SignInScreen({
   onSignedIn,
   onOpenAdmin,
+  onForgotPassword,
 }: {
   onSignedIn: (mustSetPassword: boolean) => void;
   onOpenAdmin?: () => void;
+  onForgotPassword?: () => void;
 }) {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -134,6 +136,17 @@ export function SignInScreen({
           >
             {busy ? 'Signing in…' : 'Sign in'}
           </Button>
+
+          {onForgotPassword && (
+            <button
+              type='button'
+              onClick={onForgotPassword}
+              className='w-full text-center text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground'
+              data-testid='signin-forgot'
+            >
+              Forgot password?
+            </button>
+          )}
 
           <p className='text-center text-xs leading-relaxed text-muted-foreground'>
             Accounts are created by invitation. Ask the admin for yours.

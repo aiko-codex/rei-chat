@@ -6,13 +6,25 @@
  * This replaces the room-keyed paths in message-api.ts for the DM/conversation.
  */
 import { SIGNAL_URL } from './config';
-import { decryptBytesWith, decryptJsonWith, encryptBytesWith, encryptJsonWith, fromB64, toB64 } from './account-crypto';
+import {
+  createMediaDecryptor,
+  createMediaEncryptor,
+  decryptBytesRawWith,
+  decryptJsonWith,
+  encryptJsonWith,
+  fromB64,
+  toB64,
+} from './account-crypto';
 import { getConversationKey } from './account-api';
 import { getAccount, getToken } from './session';
 import type { Message } from './types';
 
 // conversation keys are opened once per connection and cached in memory
 const keyCache = new Map<string, Uint8Array>();
+
+// plaintext bytes per media chunk. Small enough that one request stays well
+// under any shared-host post_max_size and only one chunk is ever held in memory.
+const MEDIA_CHUNK_SIZE = 1024 * 1024; // 1 MiB
 
 async function convKey(connectionId: string): Promise<Uint8Array> {
   const cached = keyCache.get(connectionId);
@@ -110,7 +122,14 @@ export async function removeConvMessage(connectionId: string, id: string): Promi
   }
 }
 
-/** upload client-encrypted media bytes as a file on the server */
+/**
+ * Upload client-encrypted media as a sequence of crypto_secretstream chunks.
+ * Each ~1 MiB plaintext slice is encrypted and POSTed on its own (so no single
+ * request is large and peak memory stays tiny), then `media_finish` writes the
+ * manifest — the receiver can only fetch once that exists. Returns false if any
+ * chunk fails, so the caller marks the message "failed · tap to retry" (a retry
+ * re-runs the whole upload idempotently).
+ */
 export async function uploadConvMedia(
   connectionId: string,
   id: string,
@@ -119,18 +138,39 @@ export async function uploadConvMedia(
 ): Promise<boolean> {
   try {
     const key = await convKey(connectionId);
-    const raw = new Uint8Array(await blob.arrayBuffer());
-    // secretbox of the whole blob → base64(nonce+box); send the raw bytes
-    const sealed = fromB64(encryptBytesWith(raw, key));
-    onProgress?.(0.1);
-    const res = await fetch(
-      `${SIGNAL_URL}?action=media_upload&connectionId=${encodeURIComponent(connectionId)}&id=${encodeURIComponent(id)}&mime=${encodeURIComponent(blob.type || 'application/octet-stream')}${tokenParam()}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        body: new Blob([sealed as BlobPart]),
-      },
-    );
+    const enc = createMediaEncryptor(key);
+    const total = Math.max(1, Math.ceil(blob.size / MEDIA_CHUNK_SIZE));
+    onProgress?.(0.02);
+    for (let i = 0; i < total; i++) {
+      const start = i * MEDIA_CHUNK_SIZE;
+      // slice → only this one chunk's bytes are ever resident in memory
+      const plain = new Uint8Array(await blob.slice(start, start + MEDIA_CHUNK_SIZE).arrayBuffer());
+      const cipher = enc.push(plain, i === total - 1);
+      const res = await fetch(
+        `${SIGNAL_URL}?action=media_chunk_put&connectionId=${encodeURIComponent(connectionId)}&id=${encodeURIComponent(id)}&idx=${i}${tokenParam()}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: new Blob([cipher as BlobPart]),
+          cache: 'no-store',
+        },
+      );
+      if (!res.ok) return false;
+      onProgress?.((i + 1) / (total + 1));
+    }
+    const res = await fetch(`${SIGNAL_URL}?action=media_finish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: getToken(),
+        connectionId,
+        id,
+        mime: blob.type || 'application/octet-stream',
+        total,
+        header: toB64(enc.header),
+        size: blob.size,
+      }),
+    });
     onProgress?.(1);
     return res.ok;
   } catch {
@@ -274,20 +314,59 @@ export async function fetchConvMeta(
   return { rows, cursor: data.cursor };
 }
 
-/** download + decrypt a media file; null if unavailable */
+/**
+ * Download + decrypt a media file; null if unavailable.
+ *
+ * `chunked` tells us which storage path to use:
+ *   true       → chunked (media_manifest + media_chunk_get, crypto_secretstream)
+ *   false      → legacy whole-file (media_fetch, single secretbox)
+ *   undefined  → unknown (a message predating the flag): try chunked, then fall
+ *                back to legacy, so old photos keep loading.
+ *
+ * Every request is `cache: 'no-store'` + a unique `t`: an installed iOS
+ * standalone PWA caches cross-origin GETs aggressively, so a transient 404 (we
+ * polled a beat before her upload committed) would otherwise be replayed from
+ * cache forever → the bubble stuck on "Loading…". Forcing a fresh hit fixes it.
+ */
 export async function downloadConvMedia(
   connectionId: string,
   id: string,
   mimeType: string,
+  chunked?: boolean,
 ): Promise<Blob | null> {
   try {
     const key = await convKey(connectionId);
+    if (chunked !== false) {
+      const mres = await fetch(
+        `${SIGNAL_URL}?action=media_manifest&connectionId=${encodeURIComponent(connectionId)}&id=${encodeURIComponent(id)}${tokenParam()}&t=${Date.now()}`,
+        { cache: 'no-store' },
+      );
+      if (mres.ok) {
+        const manifest: { total: number; header: string; mime: string } = await mres.json();
+        const dec = createMediaDecryptor(fromB64(manifest.header), key);
+        if (!dec) return null;
+        const parts: Uint8Array[] = [];
+        for (let i = 0; i < manifest.total; i++) {
+          const cres = await fetch(
+            `${SIGNAL_URL}?action=media_chunk_get&connectionId=${encodeURIComponent(connectionId)}&id=${encodeURIComponent(id)}&idx=${i}${tokenParam()}&t=${Date.now()}`,
+            { cache: 'no-store' },
+          );
+          if (!cres.ok) return null;
+          const plain = dec.pull(new Uint8Array(await cres.arrayBuffer()));
+          if (!plain) return null; // corrupt / out-of-order / forged chunk
+          parts.push(plain);
+        }
+        return new Blob(parts as BlobPart[], { type: mimeType || manifest.mime || 'application/octet-stream' });
+      }
+      if (chunked === true) return null; // known-chunked but manifest missing
+    }
+    // legacy whole-file media (single secretbox blob)
     const res = await fetch(
-      `${SIGNAL_URL}?action=media_fetch&connectionId=${encodeURIComponent(connectionId)}&id=${encodeURIComponent(id)}${tokenParam()}`,
+      `${SIGNAL_URL}?action=media_fetch&connectionId=${encodeURIComponent(connectionId)}&id=${encodeURIComponent(id)}${tokenParam()}&t=${Date.now()}`,
+      { cache: 'no-store' },
     );
     if (!res.ok) return null;
-    const raw = new Uint8Array(await res.arrayBuffer());
-    const bytes = decryptBytesWith(toB64(raw), key);
+    const bytes = decryptBytesRawWith(new Uint8Array(await res.arrayBuffer()), key);
     if (!bytes) return null;
     return new Blob([bytes as BlobPart], { type: mimeType });
   } catch {

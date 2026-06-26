@@ -107,7 +107,10 @@ export async function downloadMedia(id: string, mimeType: string): Promise<Blob 
     let idx = 0;
     let total = 1;
     while (idx < total) {
-      const res = await fetch(`${SIGNAL_URL}?action=media_get&room=${room}&deviceId=${encodeURIComponent(getDeviceId())}&id=${encodeURIComponent(id)}&idx=${idx}`);
+      const res = await fetch(
+        `${SIGNAL_URL}?action=media_get&room=${room}&deviceId=${encodeURIComponent(getDeviceId())}&id=${encodeURIComponent(id)}&idx=${idx}&t=${Date.now()}`,
+        { cache: 'no-store' },
+      );
       if (!res.ok) return null;
       const data: { idx: number; total: number; ciphertext: string } = await res.json();
       total = data.total;

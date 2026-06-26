@@ -28,6 +28,10 @@ export interface MediaAttachment {
   sticker?: boolean;
   /** shared-location messages: render an "Open in Maps" action over the image */
   coords?: { lat: number; lng: number };
+  /** the encrypted bytes are stored as crypto_secretstream chunks (media_blobs)
+   *  rather than one whole-file blob — tells the download path which endpoint to
+   *  use. Absent on remote media and on messages predating chunked upload. */
+  chunked?: boolean;
 }
 
 /** per-device profile, set by each user on their own device and exchanged
@@ -154,6 +158,7 @@ export type Screen =
   | 'lock'
   | 'sign-in'
   | 'set-password'
+  | 'reset-password'
   | 'admin'
   | 'connections'
   | 'profile-setup'

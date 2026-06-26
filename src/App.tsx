@@ -3,6 +3,7 @@ import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { AdminScreen } from '@/features/admin/AdminScreen';
 import { SignInScreen } from '@/features/auth/SignInScreen';
 import { SetPasswordScreen } from '@/features/auth/SetPasswordScreen';
+import { ResetPasswordScreen } from '@/features/auth/ResetPasswordScreen';
 import { CallScreen } from '@/features/call/CallScreen';
 import { ChatScreen } from '@/features/chat/ChatScreen';
 import { ConnectionsScreen } from '@/features/connections/ConnectionsScreen';
@@ -317,6 +318,20 @@ export default function App() {
                                 if (p) setMyProfile(p);
                                 setScreen('home');
                             }}
+                            onForgotPassword={() => setScreen('reset-password')}
+                        />
+                    </div>
+                )}
+
+                {screen === 'reset-password' && (
+                    <div className='absolute inset-0 z-40 bg-background'>
+                        <ResetPasswordScreen
+                            onReset={() => {
+                                const p = profileFromAccount();
+                                if (p) setMyProfile(p);
+                                setScreen('home');
+                            }}
+                            onBack={() => setScreen('sign-in')}
                         />
                     </div>
                 )}

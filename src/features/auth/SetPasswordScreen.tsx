@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { setPassword } from '@/lib/account-api';
+import { formatRecoveryKey } from '@/lib/recovery';
 import { getAccount } from '@/lib/session';
-import { Lock, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { Lock, CheckCircle2, Eye, EyeOff, Copy, KeyRound } from 'lucide-react';
 
 /**
  * First-login: set your own password. This is when the account keypair is
@@ -19,6 +21,7 @@ export function SetPasswordScreen({ onDone }: { onDone: () => void }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
 
   const valid = pw.length >= 6 && pw === confirm;
 
@@ -28,13 +31,20 @@ export function SetPasswordScreen({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await setPassword(pw);
-      onDone();
+      const { recoveryKey: rk } = await setPassword(pw);
+      // show the recovery key once before entering the app — it's the only way
+      // to reset a forgotten password without losing data.
+      setRecoveryKey(rk);
+      setBusy(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not set password');
       setBusy(false);
     }
   };
+
+  if (recoveryKey) {
+    return <RecoveryKeyReveal recoveryKey={recoveryKey} onDone={onDone} />;
+  }
 
   return (
     <div className='flex h-full flex-col items-center justify-center bg-linear-to-br from-background via-background to-background px-6 py-8'>
@@ -180,6 +190,87 @@ export function SetPasswordScreen({ onDone }: { onDone: () => void }) {
         <p className='mt-6 text-center text-xs text-muted-foreground'>
           Welcome{account ? `, @${account.username}` : ''}! Your password is never shared with anyone.
         </p>
+      </motion.div>
+    </div>
+  );
+}
+
+/**
+ * Shown once, right after a password is set: the recovery key. It's the only
+ * way to reset a forgotten password without losing your chats — we can't
+ * recover it for you, so it must be saved now.
+ */
+export function RecoveryKeyReveal({
+  recoveryKey,
+  onDone,
+}: {
+  recoveryKey: string;
+  onDone: () => void;
+}) {
+  const [confirmed, setConfirmed] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(formatRecoveryKey(recoveryKey));
+      toast.success('Recovery key copied');
+    } catch {
+      toast.error('Could not copy — write it down instead');
+    }
+  };
+
+  return (
+    <div className='flex h-full flex-col items-center justify-center px-6 py-8'>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+        className='w-full max-w-sm'
+      >
+        <div className='mb-6 flex flex-col items-center space-y-4 text-center'>
+          <div className='rounded-2xl bg-linear-to-br from-primary/10 to-primary/5 p-3'>
+            <KeyRound className='h-6 w-6 text-primary' />
+          </div>
+          <h1 className='text-2xl font-bold tracking-tight'>Save your recovery key</h1>
+          <p className='text-sm leading-relaxed text-muted-foreground'>
+            This is the only way to get back in if you ever forget your password —
+            without it your chats are lost. Keep it somewhere safe (password
+            manager or written down). We can never see it.
+          </p>
+        </div>
+
+        <button
+          type='button'
+          onClick={copy}
+          className='group w-full rounded-2xl border border-border/60 bg-muted/40 px-4 py-5 transition-colors hover:bg-muted/70'
+          data-testid='recovery-key-value'
+        >
+          <span className='block break-all text-center font-mono text-lg font-semibold tracking-wider'>
+            {formatRecoveryKey(recoveryKey)}
+          </span>
+          <span className='mt-2 flex items-center justify-center gap-1.5 text-xs font-medium text-muted-foreground'>
+            <Copy className='h-3.5 w-3.5' /> Tap to copy
+          </span>
+        </button>
+
+        <label className='mt-6 flex cursor-pointer items-start gap-2.5 text-sm text-muted-foreground'>
+          <input
+            type='checkbox'
+            checked={confirmed}
+            onChange={(e) => setConfirmed(e.target.checked)}
+            className='mt-0.5 size-4 accent-primary'
+            data-testid='recovery-key-confirm'
+          />
+          <span>I've saved my recovery key somewhere safe.</span>
+        </label>
+
+        <Button
+          onClick={onDone}
+          disabled={!confirmed}
+          className='mt-6 h-12 w-full rounded-full text-base font-semibold shadow-md transition-all hover:shadow-lg disabled:shadow-none'
+          data-testid='recovery-key-done'
+        >
+          Continue
+        </Button>
       </motion.div>
     </div>
   );

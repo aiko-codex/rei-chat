@@ -6,6 +6,7 @@ import {
   Check,
   ChevronRight,
   Eraser,
+  KeyRound,
   Lock,
   LogOut,
   Monitor,
@@ -41,6 +42,7 @@ import { AccountPanel } from './AccountPanel';
 import { WhatsNewPanel } from './WhatsNewPanel';
 import { ChangePINDialog } from './ChangePINDialog';
 import { ManageDevicesDialog } from './ManageDevicesDialog';
+import { AccountSecurityDialog } from './AccountSecurityDialog';
 import { EditProfileDialog } from './EditProfileDialog';
 import { PairDeviceDialog } from './PairDeviceDialog';
 import { NotificationsDialog } from './NotificationsDialog';
@@ -279,6 +281,7 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
   // accounts mode replaces device pairing — hide the legacy pairing/device rows
   const accountsMode = Boolean(account);
   const [manageDevicesOpen, setManageDevicesOpen] = useState(false);
+  const [securityMode, setSecurityMode] = useState<'password' | 'recovery' | null>(null);
   const [changePinOpen, setChangePinOpen] = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [pairDeviceOpen, setPairDeviceOpen] = useState(false);
@@ -382,6 +385,24 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
           onClick={() => setChangePinOpen(true)}
           testId="settings-change-pin"
         />
+        {accountsMode && (
+          <>
+            <Row
+              icon={<Lock className="size-4" />}
+              label="Change password"
+              hint="Keeps all your chats"
+              onClick={() => setSecurityMode('password')}
+              testId="settings-change-password"
+            />
+            <Row
+              icon={<KeyRound className="size-4" />}
+              label="Recovery key"
+              hint="Reset a forgotten password without losing chats"
+              onClick={() => setSecurityMode('recovery')}
+              testId="settings-recovery-key"
+            />
+          </>
+        )}
         {!accountsMode && (
           <>
             <Row
@@ -485,6 +506,13 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
 
       <ChangePINDialog open={changePinOpen} onOpenChange={setChangePinOpen} />
       <ManageDevicesDialog open={manageDevicesOpen} onOpenChange={setManageDevicesOpen} />
+      {securityMode && (
+        <AccountSecurityDialog
+          open={securityMode !== null}
+          onOpenChange={(o) => !o && setSecurityMode(null)}
+          mode={securityMode}
+        />
+      )}
       <EditProfileDialog
         open={editProfileOpen}
         onOpenChange={setEditProfileOpen}
