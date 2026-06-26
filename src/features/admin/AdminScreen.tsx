@@ -109,7 +109,7 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <SidebarProvider defaultOpen>
+    <SidebarProvider defaultOpen className='h-full min-h-0'>
       <div className='flex h-full w-full overflow-hidden bg-background'>
         <Sidebar collapsible='icon' className='border-r'>
           <SidebarHeader className='px-4 py-4'>

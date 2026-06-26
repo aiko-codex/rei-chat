@@ -302,7 +302,11 @@ export default function App() {
 
                 {screen === 'admin' && (
                     <div className='absolute inset-0 z-40 bg-background'>
-                        <AdminScreen onBack={() => { location.hash = ''; setScreen(bootScreen()); }} />
+                        <AdminScreen onBack={() => {
+                            location.hash = '';
+                            history.replaceState(null, '', location.pathname.replace(/\/admin\/?$/, '/'));
+                            setScreen(accountsMode() && isLoggedIn() ? landingScreen() : 'sign-in');
+                        }} />
                     </div>
                 )}
 
