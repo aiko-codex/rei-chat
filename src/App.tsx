@@ -300,8 +300,11 @@ export default function App() {
                     )}
                 </AnimatePresence>
 
+                {/* Admin is a desktop tool — break out of the max-w-xl phone
+                    shell and fill the real viewport (fixed → viewport, not the
+                    narrow app-shell column). */}
                 {screen === 'admin' && (
-                    <div className='absolute inset-0 z-40 bg-background'>
+                    <div className='fixed inset-0 z-40 bg-background'>
                         <AdminScreen onBack={() => {
                             location.hash = '';
                             history.replaceState(null, '', location.pathname.replace(/\/admin\/?$/, '/'));
