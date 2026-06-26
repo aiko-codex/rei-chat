@@ -1,24 +1,54 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState, useEffect, useMemo } from 'react';
+import { motion } from 'motion/react';
 import {
   Check,
   Copy,
   KeyRound,
-  LayoutDashboard,
-  Users,
-  UserPlus,
+  Search,
   Shield,
   LogOut,
-  CircleCheck,
-  CircleX,
-  Clock,
   ChevronLeft,
+  UserPlus,
+  MoreHorizontal,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table';
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+  EmptyContent,
+} from '@/components/ui/empty';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetFooter,
+} from '@/components/ui/sheet';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import {
   SidebarProvider,
   Sidebar,
@@ -38,6 +68,11 @@ import {
   type AdminAccount,
 } from '@/lib/admin-api';
 
+// Temp passwords are NOT stored on the server (it only keeps a hash), so to let
+// the admin re-copy a new account's password from the list later, we cache the
+// just-created temp passwords locally on THIS admin device, keyed by username.
+// They're only valid until the user does their first login + sets a real
+// password, at which point the entry is pruned.
 const TEMP_PW_KEY = 'rei-admin-temp-pw';
 function readTempPws(): Record<string, string> {
   try {
@@ -50,22 +85,47 @@ function writeTempPws(map: Record<string, string>): void {
   localStorage.setItem(TEMP_PW_KEY, JSON.stringify(map));
 }
 
-type View = 'overview' | 'accounts' | 'create';
+type Status = 'active' | 'pending' | 'disabled';
+type FilterId = 'all' | Status;
 
-const NAV = [
-  { id: 'overview' as View, label: 'Overview', icon: LayoutDashboard },
-  { id: 'accounts' as View, label: 'Accounts', icon: Users },
-  { id: 'create' as View, label: 'Create account', icon: UserPlus },
+function accountStatus(a: AdminAccount): Status {
+  if (a.disabled) return 'disabled';
+  if (a.mustSetPassword) return 'pending';
+  return 'active';
+}
+
+const STATUS_DOT: Record<Status, string> = {
+  active: 'bg-emerald-500',
+  pending: 'bg-amber-500',
+  disabled: 'bg-muted-foreground/40',
+};
+const STATUS_LABEL: Record<Status, string> = {
+  active: 'Active',
+  pending: 'Pending setup',
+  disabled: 'Disabled',
+};
+const FILTERS: { id: FilterId; label: string; dot?: Status }[] = [
+  { id: 'all', label: 'All accounts' },
+  { id: 'active', label: 'Active', dot: 'active' },
+  { id: 'pending', label: 'Pending setup', dot: 'pending' },
+  { id: 'disabled', label: 'Disabled', dot: 'disabled' },
 ];
 
+/**
+ * Super-admin panel: gate on the admin password, then create / list / disable
+ * accounts. The admin never sees message content — only account rows.
+ */
 export function AdminScreen({ onBack }: { onBack: () => void }) {
   const [pw, setPw] = useState('');
   const [authed, setAuthed] = useState(false);
   const [accounts, setAccounts] = useState<AdminAccount[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [view, setView] = useState<View>('overview');
+  const [filter, setFilter] = useState<FilterId>('all');
+  const [search, setSearch] = useState('');
   const [tempPws, setTempPws] = useState<Record<string, string>>(readTempPws);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [justCreated, setJustCreated] = useState<string | null>(null);
 
   const refresh = async (adminPw: string) => {
     const { accounts } = await listAccounts(adminPw);
@@ -98,138 +158,241 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
-  // Poll accounts every 30s while panel is open
+  // keep the roster live while the panel is open
   useEffect(() => {
     if (!authed) return;
     const id = setInterval(() => void refresh(pw), 30_000);
     return () => clearInterval(id);
   }, [authed, pw]);
 
+  // brief "just created" row highlight, then clear
+  useEffect(() => {
+    if (!justCreated) return;
+    const t = setTimeout(() => setJustCreated(null), 2000);
+    return () => clearTimeout(t);
+  }, [justCreated]);
+
+  const counts = useMemo(
+    () => ({
+      all: accounts.length,
+      active: accounts.filter((a) => accountStatus(a) === 'active').length,
+      pending: accounts.filter((a) => accountStatus(a) === 'pending').length,
+      disabled: accounts.filter((a) => accountStatus(a) === 'disabled').length,
+    }),
+    [accounts],
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return accounts
+      .filter((a) => filter === 'all' || accountStatus(a) === filter)
+      .filter(
+        (a) =>
+          !q ||
+          a.username.toLowerCase().includes(q) ||
+          a.displayName.toLowerCase().includes(q) ||
+          (a.email ?? '').toLowerCase().includes(q),
+      )
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }, [accounts, filter, search]);
+
+  const toggleDisabled = async (a: AdminAccount) => {
+    try {
+      await setAccountDisabled(pw, a.userId, !a.disabled);
+      toast(a.disabled ? `@${a.username} enabled` : `@${a.username} disabled`);
+      await refresh(pw);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed');
+    }
+  };
+
   if (!authed) {
     return <LoginGate pw={pw} setPw={setPw} error={error} busy={busy} onSubmit={unlock} onBack={onBack} />;
   }
 
+  const activeFilterLabel = FILTERS.find((f) => f.id === filter)?.label;
+
   return (
-    <TooltipProvider>
-    <SidebarProvider defaultOpen className='h-full min-h-0'>
-      <div className='flex h-full w-full overflow-hidden bg-background'>
-        <Sidebar collapsible='icon' className='border-r'>
-          <SidebarHeader className='px-4 py-4'>
-            <div className='flex items-center gap-2'>
-              <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground'>
-                <Shield className='h-4 w-4' />
-              </div>
-              <div className='min-w-0 group-data-[collapsible=icon]:hidden'>
-                <p className='text-sm font-semibold leading-none'>rei admin</p>
-                <p className='mt-0.5 text-[11px] text-muted-foreground'>Super-admin panel</p>
-              </div>
-            </div>
-          </SidebarHeader>
+    <div style={{ contain: 'layout' }} className='h-full w-full'>
+      <TooltipProvider>
+        <SidebarProvider defaultOpen className='h-full min-h-0'>
+          <div className='flex h-full w-full overflow-hidden bg-background'>
+            <Sidebar collapsible='icon' className='border-r'>
+              <SidebarHeader className='px-3 py-3'>
+                <div className='flex items-center gap-2'>
+                  <div className='flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground'>
+                    <Shield className='h-3.5 w-3.5' />
+                  </div>
+                  <p className='min-w-0 truncate text-sm font-semibold group-data-[collapsible=icon]:hidden'>
+                    rei admin
+                  </p>
+                </div>
+              </SidebarHeader>
 
-          <SidebarContent className='px-2'>
-            <SidebarMenu>
-              {NAV.map(({ id, label, icon: Icon }) => (
-                <SidebarMenuItem key={id}>
-                  <SidebarMenuButton
-                    isActive={view === id}
-                    onClick={() => setView(id)}
-                    tooltip={label}
+              <SidebarContent className='gap-3 px-2 pt-1'>
+                <div className='space-y-2 group-data-[collapsible=icon]:hidden'>
+                  <div className='relative'>
+                    <Search className='pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground' />
+                    <Input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder='Search accounts'
+                      className='h-8 pl-7 text-sm'
+                      data-testid='admin-search'
+                    />
+                  </div>
+                  <Button
+                    size='sm'
+                    className='w-full justify-start gap-2'
+                    onClick={() => setSheetOpen(true)}
+                    data-testid='admin-open-create'
                   >
-                    <Icon className='h-4 w-4' />
-                    <span>{label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarContent>
+                    <UserPlus className='h-3.5 w-3.5' /> Create account
+                  </Button>
+                </div>
 
-          <SidebarFooter className='px-2 py-3'>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton onClick={onBack} tooltip='Back to app'>
-                  <ChevronLeft className='h-4 w-4' />
-                  <span>Back to app</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  onClick={() => { setAuthed(false); setPw(''); }}
-                  tooltip='Sign out'
-                  className='text-destructive hover:text-destructive'
-                >
-                  <LogOut className='h-4 w-4' />
-                  <span>Sign out</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarFooter>
-        </Sidebar>
+                <SidebarMenu>
+                  {FILTERS.map(({ id, label, dot }) => (
+                    <SidebarMenuItem key={id}>
+                      <SidebarMenuButton isActive={filter === id} onClick={() => setFilter(id)} tooltip={label}>
+                        <span
+                          className={cn(
+                            'size-1.5 shrink-0 rounded-full',
+                            dot ? STATUS_DOT[dot] : 'border border-muted-foreground/40',
+                          )}
+                        />
+                        <span className='truncate'>{label}</span>
+                        <span className='ml-auto shrink-0 text-xs tabular-nums text-muted-foreground'>
+                          {counts[id]}
+                        </span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarContent>
 
-        <SidebarInset className='flex min-w-0 flex-1 flex-col overflow-hidden'>
-          {/* Top bar */}
-          <header className='flex h-12 shrink-0 items-center gap-3 border-b px-4'>
-            <SidebarTrigger className='-ml-1' />
-            <div className='h-4 w-px bg-border' />
-            <h1 className='text-sm font-semibold'>
-              {NAV.find((n) => n.id === view)?.label}
-            </h1>
-          </header>
+              <SidebarFooter className='px-2 py-2'>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton onClick={onBack} tooltip='Back to app'>
+                      <ChevronLeft className='h-4 w-4' />
+                      <span>Back to app</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => {
+                        setAuthed(false);
+                        setPw('');
+                      }}
+                      tooltip='Sign out'
+                      className='text-destructive hover:text-destructive'
+                    >
+                      <LogOut className='h-4 w-4' />
+                      <span>Sign out</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarFooter>
+            </Sidebar>
 
-          <main className='flex-1 overflow-y-auto p-6'>
-            <AnimatePresence mode='wait'>
-              {view === 'overview' && (
-                <OverviewView key='overview' accounts={accounts} onNavigate={setView} />
-              )}
-              {view === 'accounts' && (
-                <AccountsView
-                  key='accounts'
-                  accounts={accounts}
-                  tempPws={tempPws}
-                  onToggleDisabled={(a) => void toggleDisabled(a, pw, refresh, setError)}
-                />
-              )}
-              {view === 'create' && (
-                <CreateView
-                  key='create'
-                  adminPw={pw}
-                  onCreated={(map) => {
-                    writeTempPws(map);
-                    setTempPws(map);
-                    void refresh(pw);
-                    setView('accounts');
-                  }}
-                />
-              )}
-            </AnimatePresence>
-          </main>
-        </SidebarInset>
-      </div>
-    </SidebarProvider>
-    </TooltipProvider>
+            <SidebarInset className='flex min-w-0 flex-1 flex-col overflow-hidden'>
+              <header className='flex h-12 shrink-0 items-center gap-3 border-b px-4'>
+                <SidebarTrigger className='-ml-1' />
+                <Separator orientation='vertical' className='h-4' />
+                <h1 className='text-sm font-semibold'>{activeFilterLabel}</h1>
+                <span className='text-xs text-muted-foreground'>{filtered.length}</span>
+              </header>
+
+              <main className='flex-1 overflow-y-auto'>
+                {filtered.length === 0 ? (
+                  <div className='flex h-full items-center justify-center p-6'>
+                    <Empty>
+                      <EmptyHeader>
+                        <EmptyMedia variant='icon'>
+                          {accounts.length === 0 ? <UserPlus className='h-4 w-4' /> : <Search className='h-4 w-4' />}
+                        </EmptyMedia>
+                        <EmptyTitle>{accounts.length === 0 ? 'No accounts yet' : 'No matches'}</EmptyTitle>
+                        <EmptyDescription>
+                          {accounts.length === 0
+                            ? 'Create the first account to get started.'
+                            : 'Try a different search or filter.'}
+                        </EmptyDescription>
+                      </EmptyHeader>
+                      {accounts.length === 0 && (
+                        <EmptyContent>
+                          <Button size='sm' onClick={() => setSheetOpen(true)} className='gap-2'>
+                            <UserPlus className='h-3.5 w-3.5' /> Create account
+                          </Button>
+                        </EmptyContent>
+                      )}
+                    </Empty>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Account</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Joined</TableHead>
+                        <TableHead className='text-right'>Active</TableHead>
+                        <TableHead className='w-8' />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filtered.map((a) => (
+                        <AccountTableRow
+                          key={a.userId}
+                          account={a}
+                          tempPw={tempPws[a.username]}
+                          highlighted={justCreated === a.username}
+                          onToggleDisabled={() => void toggleDisabled(a)}
+                        />
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </main>
+            </SidebarInset>
+          </div>
+        </SidebarProvider>
+
+        <CreateAccountSheet
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          adminPw={pw}
+          onCreated={(username, tempPassword) => {
+            const map = { ...readTempPws(), [username]: tempPassword };
+            writeTempPws(map);
+            setTempPws(map);
+            void refresh(pw);
+            setJustCreated(username);
+            setFilter('all');
+            setSearch('');
+          }}
+        />
+      </TooltipProvider>
+    </div>
   );
-}
-
-async function toggleDisabled(
-  a: AdminAccount,
-  pw: string,
-  refresh: (pw: string) => Promise<void>,
-  setError: (e: string | null) => void,
-) {
-  try {
-    await setAccountDisabled(pw, a.userId, !a.disabled);
-    await refresh(pw);
-  } catch (err) {
-    setError(err instanceof Error ? err.message : 'Failed');
-  }
 }
 
 // ─── Login gate ───────────────────────────────────────────────────────────────
 
 function LoginGate({
-  pw, setPw, error, busy, onSubmit, onBack,
+  pw,
+  setPw,
+  error,
+  busy,
+  onSubmit,
+  onBack,
 }: {
-  pw: string; setPw: (v: string) => void; error: string | null;
-  busy: boolean; onSubmit: (e: React.FormEvent) => void; onBack: () => void;
+  pw: string;
+  setPw: (v: string) => void;
+  error: string | null;
+  busy: boolean;
+  onSubmit: (e: React.FormEvent) => void;
+  onBack: () => void;
 }) {
   return (
     <div className='flex h-full flex-col items-center justify-center bg-background px-6'>
@@ -238,10 +401,7 @@ function LoginGate({
         animate={{ opacity: 1, y: 0 }}
         className='w-full max-w-sm space-y-6'
       >
-        <button
-          onClick={onBack}
-          className='flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground'
-        >
+        <button onClick={onBack} className='flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground'>
           <ChevronLeft className='h-4 w-4' /> Back
         </button>
         <div className='flex flex-col items-center gap-3 text-center'>
@@ -273,235 +433,99 @@ function LoginGate({
   );
 }
 
-// ─── Overview ─────────────────────────────────────────────────────────────────
+// ─── Account row ──────────────────────────────────────────────────────────────
 
-function OverviewView({
-  accounts,
-  onNavigate,
-}: {
-  accounts: AdminAccount[];
-  onNavigate: (v: View) => void;
-}) {
-  const total = accounts.length;
-  const active = accounts.filter((a) => !a.disabled && !a.mustSetPassword).length;
-  const pending = accounts.filter((a) => a.mustSetPassword && !a.disabled).length;
-  const disabled = accounts.filter((a) => a.disabled).length;
-
-  return (
-    <PageSlide>
-      <div className='space-y-6'>
-        <div>
-          <h2 className='text-lg font-semibold'>Welcome back</h2>
-          <p className='text-sm text-muted-foreground'>Here's a quick look at the user base.</p>
-        </div>
-
-        <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>
-          <StatCard label='Total accounts' value={total} icon={Users} color='text-primary' />
-          <StatCard label='Active' value={active} icon={CircleCheck} color='text-emerald-500' />
-          <StatCard label='Pending setup' value={pending} icon={Clock} color='text-amber-500' />
-          <StatCard label='Disabled' value={disabled} icon={CircleX} color='text-destructive' />
-        </div>
-
-        {/* Recent accounts */}
-        <div className='rounded-xl border'>
-          <div className='flex items-center justify-between border-b px-4 py-3'>
-            <p className='text-sm font-medium'>Recent accounts</p>
-            <Button variant='ghost' size='sm' onClick={() => onNavigate('accounts')} className='text-xs'>
-              View all
-            </Button>
-          </div>
-          {accounts.length === 0 ? (
-            <p className='px-4 py-6 text-center text-sm text-muted-foreground'>No accounts yet.</p>
-          ) : (
-            <ul className='divide-y'>
-              {[...accounts]
-                .sort((a, b) => b.createdAt - a.createdAt)
-                .slice(0, 5)
-                .map((a) => (
-                  <AccountRow key={a.userId} account={a} tempPws={{}} minimal />
-                ))}
-            </ul>
-          )}
-        </div>
-
-        <Button onClick={() => onNavigate('create')} className='gap-2'>
-          <UserPlus className='h-4 w-4' /> Create account
-        </Button>
-      </div>
-    </PageSlide>
-  );
-}
-
-function StatCard({
-  label, value, icon: Icon, color,
-}: {
-  label: string; value: number; icon: React.ElementType; color: string;
-}) {
-  return (
-    <div className='rounded-xl border bg-card p-4'>
-      <div className={`mb-2 ${color}`}>
-        <Icon className='h-5 w-5' />
-      </div>
-      <p className='text-2xl font-bold'>{value}</p>
-      <p className='mt-0.5 text-xs text-muted-foreground'>{label}</p>
-    </div>
-  );
-}
-
-// ─── Accounts list ────────────────────────────────────────────────────────────
-
-function AccountsView({
-  accounts,
-  tempPws,
-  onToggleDisabled,
-}: {
-  accounts: AdminAccount[];
-  tempPws: Record<string, string>;
-  onToggleDisabled: (a: AdminAccount) => void;
-}) {
-  const [search, setSearch] = useState('');
-  const filtered = accounts.filter(
-    (a) =>
-      a.username.includes(search.toLowerCase()) ||
-      a.displayName.toLowerCase().includes(search.toLowerCase()) ||
-      (a.email ?? '').toLowerCase().includes(search.toLowerCase()),
-  );
-
-  return (
-    <PageSlide>
-      <div className='space-y-4'>
-        <div className='flex items-center gap-3'>
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder='Search accounts…'
-            className='max-w-xs'
-          />
-          <span className='text-sm text-muted-foreground'>{filtered.length} account{filtered.length !== 1 ? 's' : ''}</span>
-        </div>
-
-        <div className='rounded-xl border'>
-          {filtered.length === 0 ? (
-            <p className='px-4 py-8 text-center text-sm text-muted-foreground'>
-              {accounts.length === 0 ? 'No accounts yet.' : 'No results.'}
-            </p>
-          ) : (
-            <ul className='divide-y'>
-              {filtered.map((a) => (
-                <AccountRow
-                  key={a.userId}
-                  account={a}
-                  tempPws={tempPws}
-                  onToggleDisabled={() => onToggleDisabled(a)}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </PageSlide>
-  );
-}
-
-function AccountRow({
+function AccountTableRow({
   account: a,
-  tempPws,
+  tempPw,
+  highlighted,
   onToggleDisabled,
-  minimal = false,
 }: {
   account: AdminAccount;
-  tempPws: Record<string, string>;
-  onToggleDisabled?: () => void;
-  minimal?: boolean;
+  tempPw?: string;
+  highlighted?: boolean;
+  onToggleDisabled: () => void;
 }) {
-  const statusLabel = a.disabled ? 'Disabled' : a.mustSetPassword ? 'Pending' : 'Active';
-  const statusVariant = a.disabled
-    ? 'destructive'
-    : a.mustSetPassword
-      ? 'secondary'
-      : 'default';
+  const status = accountStatus(a);
 
   return (
-    <li className='flex items-center gap-3 px-4 py-3'>
-      {/* Avatar */}
-      <div className='flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold uppercase text-foreground'>
-        {a.displayName.slice(0, 1)}
-      </div>
-
-      {/* Info */}
-      <div className='min-w-0 flex-1'>
-        <div className='flex flex-wrap items-center gap-1.5'>
-          <p className='text-sm font-medium leading-none'>{a.displayName}</p>
-          <span className='text-xs text-muted-foreground'>@{a.username}</span>
-          <Badge variant={statusVariant} className='px-1.5 py-0 text-[10px]'>
-            {statusLabel}
-          </Badge>
+    <TableRow className={cn(highlighted && 'bg-primary/10')} data-testid='admin-account-row'>
+      <TableCell>
+        <div className='flex items-center gap-2.5'>
+          <Avatar>
+            <AvatarFallback className='bg-primary/90 text-xs font-semibold text-white'>
+              {a.displayName.slice(0, 1).toUpperCase() || '?'}
+            </AvatarFallback>
+          </Avatar>
+          <div className='min-w-0'>
+            <p className='truncate text-sm font-medium leading-tight'>{a.displayName}</p>
+            <p className='truncate text-xs leading-tight text-muted-foreground'>@{a.username}</p>
+          </div>
         </div>
-        {a.email && (
-          <p className='mt-0.5 truncate text-xs text-muted-foreground'>{a.email}</p>
-        )}
-        <p className='mt-0.5 text-[11px] text-muted-foreground'>
-          Joined {new Date(a.createdAt * 1000).toLocaleDateString()}
-        </p>
-      </div>
-
-      {/* Actions */}
-      {!minimal && (
-        <div className='flex shrink-0 items-center gap-1.5'>
-          <IconCopyBtn value={a.username} label='Copy username' icon={<Copy className='h-3.5 w-3.5' />} />
-          {tempPws[a.username] && (
-            <IconCopyBtn
-              value={tempPws[a.username]}
-              label='Copy temp password'
-              icon={<KeyRound className='h-3.5 w-3.5' />}
-            />
-          )}
-          <Button
-            variant='outline'
-            size='sm'
-            onClick={onToggleDisabled}
-            className='h-7 rounded-full px-3 text-xs'
-          >
-            {a.disabled ? 'Enable' : 'Disable'}
-          </Button>
-        </div>
-      )}
-    </li>
-  );
-}
-
-function IconCopyBtn({ value, label, icon }: { value: string; label: string; icon: React.ReactNode }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      toast(label.replace('Copy ', '') + ' copied');
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      toast.error("Couldn't copy");
-    }
-  };
-  return (
-    <button
-      onClick={copy}
-      title={label}
-      aria-label={label}
-      className='flex h-7 w-7 items-center justify-center rounded-full border text-muted-foreground hover:bg-muted'
-    >
-      {copied ? <Check className='h-3.5 w-3.5 text-emerald-600' /> : icon}
-    </button>
+      </TableCell>
+      <TableCell className='text-sm text-muted-foreground'>{a.email || '—'}</TableCell>
+      <TableCell>
+        <span className='flex items-center gap-1.5 text-sm whitespace-nowrap'>
+          <span
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              STATUS_DOT[status],
+              status === 'pending' && 'animate-pulse',
+            )}
+          />
+          {STATUS_LABEL[status]}
+        </span>
+      </TableCell>
+      <TableCell className='text-sm whitespace-nowrap text-muted-foreground'>
+        {new Date(a.createdAt * 1000).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })}
+      </TableCell>
+      <TableCell className='text-right'>
+        <Switch
+          checked={!a.disabled}
+          onCheckedChange={onToggleDisabled}
+          aria-label={a.disabled ? 'Enable account' : 'Disable account'}
+          data-testid='admin-toggle-disabled'
+        />
+      </TableCell>
+      <TableCell>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant='ghost' size='icon-sm' aria-label='Account actions'>
+              <MoreHorizontal className='h-4 w-4' />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align='end'>
+            <DropdownMenuItem onSelect={() => void copyText(a.username, 'Username copied')}>
+              <Copy className='h-3.5 w-3.5' /> Copy username
+            </DropdownMenuItem>
+            {tempPw && (
+              <DropdownMenuItem onSelect={() => void copyText(tempPw, 'Temporary password copied')}>
+                <KeyRound className='h-3.5 w-3.5' /> Copy temp password
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TableCell>
+    </TableRow>
   );
 }
 
 // ─── Create account ────────────────────────────────────────────────────────────
 
-function CreateView({
+function CreateAccountSheet({
+  open,
+  onOpenChange,
   adminPw,
   onCreated,
 }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   adminPw: string;
-  onCreated: (tempPws: Record<string, string>) => void;
+  onCreated: (username: string, tempPassword: string) => void;
 }) {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -511,6 +535,21 @@ function CreateView({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const reset = () => {
+    setUsername('');
+    setDisplayName('');
+    setEmail('');
+    setTempPassword('');
+    setCreated(null);
+    setError(null);
+    setBusy(false);
+  };
+
+  const handleOpenChange = (next: boolean) => {
+    onOpenChange(next);
+    if (!next) setTimeout(reset, 200);
+  };
+
   const valid = username.trim().length > 0 && displayName.trim().length > 0 && tempPassword.length >= 4;
 
   const submit = async (e: React.FormEvent) => {
@@ -518,7 +557,6 @@ function CreateView({
     if (!valid || busy) return;
     setBusy(true);
     setError(null);
-    setCreated(null);
     try {
       const res = await createAccount(adminPw, {
         username: username.trim(),
@@ -526,11 +564,8 @@ function CreateView({
         email: email.trim() || undefined,
         tempPassword,
       });
-      const creds = { username: res.username, password: tempPassword };
-      setCreated(creds);
-      const map = { ...readTempPws(), [res.username]: tempPassword };
-      toast.success(`Account @${res.username} created`);
-      setTimeout(() => onCreated(map), 1200);
+      setCreated({ username: res.username, password: tempPassword });
+      onCreated(res.username, tempPassword);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create account');
     } finally {
@@ -539,59 +574,17 @@ function CreateView({
   };
 
   return (
-    <PageSlide>
-      <div className='mx-auto max-w-md space-y-6'>
-        <div>
-          <h2 className='text-base font-semibold'>New account</h2>
-          <p className='text-sm text-muted-foreground'>
-            The user will be asked to set their own password on first login. The admin can't read their messages.
-          </p>
-        </div>
-
-        <form onSubmit={submit} className='space-y-4'>
-          <Field label='Username'>
-            <Input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder='e.g. jess_21'
-              autoCapitalize='none'
-              data-testid='admin-new-username'
-            />
-          </Field>
-          <Field label='Display name'>
-            <Input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder='e.g. Jessica'
-              data-testid='admin-new-display'
-            />
-          </Field>
-          <Field label='Email (optional)'>
-            <Input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder='user@example.com'
-              autoCapitalize='none'
-              type='email'
-            />
-          </Field>
-          <Field label='Temporary password'>
-            <Input
-              value={tempPassword}
-              onChange={(e) => setTempPassword(e.target.value)}
-              placeholder='At least 4 characters'
-              data-testid='admin-new-temp'
-            />
-          </Field>
-
-          {created && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.97 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className='space-y-3 rounded-xl border border-emerald-600/30 bg-emerald-500/5 p-4'
-              data-testid='admin-created-card'
-            >
-              <p className='text-sm font-medium text-emerald-600'>Account created — share these credentials</p>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
+      <SheetContent className='flex w-full flex-col sm:max-w-md'>
+        {created ? (
+          <>
+            <SheetHeader>
+              <SheetTitle>Account created</SheetTitle>
+              <SheetDescription>
+                Share these with @{created.username} — the password only exists here; the server keeps a hash, never the plaintext.
+              </SheetDescription>
+            </SheetHeader>
+            <div className='flex-1 space-y-3 px-4'>
               <CredentialRow label='Username' value={created.username} testId='admin-copy-username' />
               <CredentialRow label='Password' value={created.password} testId='admin-copy-password' />
               <Button
@@ -600,34 +593,78 @@ function CreateView({
                 size='sm'
                 className='w-full'
                 onClick={() =>
-                  void navigator.clipboard
-                    .writeText(`Username: ${created.username}\nPassword: ${created.password}`)
-                    .then(() => toast('Credentials copied'))
+                  void copyText(`Username: ${created.username}\nPassword: ${created.password}`, 'Credentials copied')
                 }
                 data-testid='admin-copy-both'
               >
                 <Copy className='h-3.5 w-3.5' /> Copy both
               </Button>
-            </motion.div>
-          )}
-
-          {error && <p className='text-sm text-destructive'>{error}</p>}
-
-          <Button type='submit' className='w-full' disabled={busy || !valid}>
-            {busy ? 'Creating…' : 'Create account'}
-          </Button>
-        </form>
-      </div>
-    </PageSlide>
+            </div>
+            <SheetFooter>
+              <Button onClick={() => handleOpenChange(false)} className='w-full'>
+                Done
+              </Button>
+            </SheetFooter>
+          </>
+        ) : (
+          <form onSubmit={submit} className='flex h-full flex-col'>
+            <SheetHeader>
+              <SheetTitle>Create account</SheetTitle>
+              <SheetDescription>They'll set their own password on first login — you never see it.</SheetDescription>
+            </SheetHeader>
+            <div className='flex-1 space-y-4 overflow-y-auto px-4'>
+              <Field label='Username'>
+                <Input
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder='e.g. jess_21'
+                  autoCapitalize='none'
+                  data-testid='admin-new-username'
+                />
+              </Field>
+              <Field label='Display name'>
+                <Input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder='e.g. Jessica'
+                  data-testid='admin-new-display'
+                />
+              </Field>
+              <Field label='Email (optional)'>
+                <Input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder='user@example.com'
+                  autoCapitalize='none'
+                  type='email'
+                />
+              </Field>
+              <Field label='Temporary password'>
+                <Input
+                  value={tempPassword}
+                  onChange={(e) => setTempPassword(e.target.value)}
+                  placeholder='At least 4 characters'
+                  data-testid='admin-new-temp'
+                />
+              </Field>
+              {error && <p className='text-sm text-destructive'>{error}</p>}
+            </div>
+            <SheetFooter>
+              <Button type='submit' className='w-full' disabled={busy || !valid}>
+                {busy ? 'Creating…' : 'Create account'}
+              </Button>
+            </SheetFooter>
+          </form>
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className='space-y-1.5'>
-      <label className='text-xs font-semibold uppercase tracking-wider text-muted-foreground'>
-        {label}
-      </label>
+      <label className='text-xs font-semibold tracking-wider text-muted-foreground uppercase'>{label}</label>
       {children}
     </div>
   );
@@ -635,35 +672,26 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
-function PageSlide({ children }: { children: React.ReactNode }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -4 }}
-      transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
-    >
-      {children}
-    </motion.div>
-  );
+async function copyText(text: string, okMsg = 'Copied'): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(okMsg);
+  } catch {
+    toast.error("Couldn't copy");
+  }
 }
 
 function CredentialRow({ label, value, testId }: { label: string; value: string; testId: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      toast(`${label} copied`);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      toast.error("Couldn't copy");
-    }
+    await copyText(value, `${label} copied`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
   return (
     <div className='flex items-center gap-2'>
       <div className='min-w-0 flex-1'>
-        <p className='text-[11px] uppercase tracking-wide text-muted-foreground'>{label}</p>
+        <p className='text-[11px] tracking-wide text-muted-foreground uppercase'>{label}</p>
         <p className='truncate font-mono text-sm'>{value}</p>
       </div>
       <button
