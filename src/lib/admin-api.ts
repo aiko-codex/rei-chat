@@ -48,3 +48,17 @@ export function setAccountDisabled(
 ): Promise<{ ok: boolean }> {
   return adminPost('admin_set_disabled', adminPassword, { userId, disabled });
 }
+
+/**
+ * Fetch the sealed escrow blob (`admin_wrap`) for an account — the account's
+ * recovery key, sealed to the OFFLINE admin escrow public key. The server never
+ * opens it; the admin unseals it client-side with the offline escrow PRIVATE key
+ * (openSealedStringWithKeys) to recover the user's recovery key. 404s with
+ * 'no admin escrow on file' for accounts created before escrow was configured.
+ */
+export function getAdminRecovery(
+  adminPassword: string,
+  identifier: string,
+): Promise<{ userId: string; adminWrap: string }> {
+  return adminPost('admin_get_recovery', adminPassword, { identifier });
+}

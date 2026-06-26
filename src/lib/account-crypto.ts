@@ -86,6 +86,19 @@ export function unwrapPrivateKey(wrapped: string, password: string): Uint8Array 
   }
 }
 
+// ── admin auth proof ────────────────────────────────────────────────────────
+/**
+ * Derive the admin-login proof from the OFFLINE escrow private key (base64).
+ * proof = sha256_hex('rei-admin-v1:' + privKeyB64). This proof is the only thing
+ * the client ever sends; the server stores just sha256(proof), so neither the
+ * proof nor the private key can be reconstructed from a server/DB breach. The
+ * escrow private key thus doubles as the entire admin credential (it also
+ * unseals user recovery blobs). Must match the server's hash('sha256', proof).
+ */
+export function deriveAdminProof(escrowPrivKeyB64: string): string {
+  return sodium.to_hex(sodium.crypto_hash_sha256('rei-admin-v1:' + escrowPrivKeyB64.trim()));
+}
+
 // ── conversation key ──────────────────────────────────────────────────────
 /** a fresh symmetric conversation key (run by the accepter of a connection) */
 export function generateConversationKey(): Uint8Array {
@@ -112,6 +125,30 @@ export function sealStringTo(value: string, recipientPubKeyB64: string): string 
 export function openSealedKey(sealedB64: string, myKeys: KeyPair): Uint8Array | null {
   try {
     return sodium.crypto_box_seal_open(fromB64(sealedB64), myKeys.publicKey, myKeys.privateKey);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Open a string sealed with sealStringTo(), given the escrow KEYPAIR as base64
+ * (public + private). Returns the plaintext, or null on failure. Used by the
+ * admin panel's in-panel "Recover access": the OFFLINE escrow private key is
+ * supplied by the admin at recovery time and never stored or sent to the server,
+ * so a host/DB breach (which only holds the sealed blob) can recover nothing.
+ */
+export function openSealedStringWithKeys(
+  sealedB64: string,
+  publicKeyB64: string,
+  privateKeyB64: string,
+): string | null {
+  try {
+    const opened = sodium.crypto_box_seal_open(
+      fromB64(sealedB64),
+      fromB64(publicKeyB64),
+      fromB64(privateKeyB64),
+    );
+    return opened ? sodium.to_string(opened) : null;
   } catch {
     return null;
   }

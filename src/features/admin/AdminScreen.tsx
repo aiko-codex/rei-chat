@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion } from 'motion/react';
 import {
   Check,
@@ -6,6 +6,7 @@ import {
   KeyRound,
   Search,
   Shield,
+  ShieldCheck,
   LogOut,
   ChevronLeft,
   UserPlus,
@@ -13,6 +14,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { ADMIN_PUBLIC_KEY } from '@/lib/config';
+import { deriveAdminProof, openSealedStringWithKeys, readyCrypto } from '@/lib/account-crypto';
+import { formatRecoveryKey } from '@/lib/recovery';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -65,6 +69,7 @@ import {
   createAccount,
   listAccounts,
   setAccountDisabled,
+  getAdminRecovery,
   type AdminAccount,
 } from '@/lib/admin-api';
 
@@ -116,6 +121,9 @@ const FILTERS: { id: FilterId; label: string; dot?: Status }[] = [
  * accounts. The admin never sees message content — only account rows.
  */
 export function AdminScreen({ onBack }: { onBack: () => void }) {
+  // `pw` here is the derived admin PROOF (sha256 of the escrow key), not a
+  // password — it's what every admin_* call sends; the server stores only its
+  // hash. Set on unlock from the loaded escrow private key.
   const [pw, setPw] = useState('');
   const [authed, setAuthed] = useState(false);
   const [accounts, setAccounts] = useState<AdminAccount[]>([]);
@@ -126,6 +134,11 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   const [tempPws, setTempPws] = useState<Record<string, string>>(readTempPws);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [justCreated, setJustCreated] = useState<string | null>(null);
+  // in-panel "Recover access": which account's sheet is open, and the offline
+  // escrow private key — held in memory for this panel session only, NEVER
+  // persisted or sent to the server (paste once, reuse across accounts).
+  const [recoverFor, setRecoverFor] = useState<AdminAccount | null>(null);
+  const [escrowPriv, setEscrowPriv] = useState('');
 
   const refresh = async (adminPw: string) => {
     const { accounts } = await listAccounts(adminPw);
@@ -144,15 +157,24 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const unlock = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Unlock with the offline escrow private key: derive the admin proof from it,
+  // verify against the server, and — since the same key unseals recovery blobs —
+  // load it into escrowPriv so "Recover access" needs no second paste.
+  const unlock = async (escrowKey: string) => {
+    const key = escrowKey.trim();
+    if (!key) return;
     setBusy(true);
     setError(null);
     try {
-      await refresh(pw);
+      await readyCrypto();
+      const proof = deriveAdminProof(key);
+      await refresh(proof);
+      setPw(proof);
+      setEscrowPriv(key);
       setAuthed(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Wrong admin password');
+      const msg = err instanceof Error ? err.message : 'That admin key was not accepted';
+      setError(/401|auth failed/i.test(msg) ? 'That admin key was not accepted.' : msg);
     } finally {
       setBusy(false);
     }
@@ -207,7 +229,7 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   };
 
   if (!authed) {
-    return <LoginGate pw={pw} setPw={setPw} error={error} busy={busy} onSubmit={unlock} onBack={onBack} />;
+    return <LoginGate error={error} busy={busy} onUnlock={unlock} onBack={onBack} />;
   }
 
   const activeFilterLabel = FILTERS.find((f) => f.id === filter)?.label;
@@ -348,6 +370,7 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
                           tempPw={tempPws[a.username]}
                           highlighted={justCreated === a.username}
                           onToggleDisabled={() => void toggleDisabled(a)}
+                          onRecover={() => setRecoverFor(a)}
                         />
                       ))}
                     </TableBody>
@@ -372,6 +395,14 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
             setSearch('');
           }}
         />
+
+        <RecoverAccessSheet
+          account={recoverFor}
+          adminPw={pw}
+          escrowPriv={escrowPriv}
+          setEscrowPriv={setEscrowPriv}
+          onClose={() => setRecoverFor(null)}
+        />
       </TooltipProvider>
     </div>
   );
@@ -380,20 +411,39 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
 // ─── Login gate ───────────────────────────────────────────────────────────────
 
 function LoginGate({
-  pw,
-  setPw,
   error,
   busy,
-  onSubmit,
+  onUnlock,
   onBack,
 }: {
-  pw: string;
-  setPw: (v: string) => void;
   error: string | null;
   busy: boolean;
-  onSubmit: (e: React.FormEvent) => void;
+  onUnlock: (escrowKey: string) => void;
   onBack: () => void;
 }) {
+  const [key, setKey] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // read a saved key file (escrow_private_key.txt) and pull out the base64 key —
+  // the last non-empty, non-comment line.
+  const loadFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const line = text
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter((s) => s && !s.startsWith('#'))
+        .pop();
+      if (line) setKey(line);
+      else toast.error('No key found in that file');
+    } catch {
+      toast.error("Couldn't read that file");
+    } finally {
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   return (
     <div className='flex h-full flex-col items-center justify-center bg-background px-6'>
       <motion.div
@@ -410,21 +460,46 @@ function LoginGate({
           </div>
           <div>
             <h1 className='text-xl font-bold'>Admin panel</h1>
-            <p className='mt-1 text-sm text-muted-foreground'>Enter the admin password to continue.</p>
+            <p className='mt-1 text-sm text-muted-foreground'>
+              Unlock with your offline admin key. The key stays on this device — the server only ever sees a one-way
+              proof.
+            </p>
           </div>
         </div>
-        <form onSubmit={onSubmit} className='space-y-3'>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onUnlock(key);
+          }}
+          className='space-y-3'
+        >
           <Input
             type='password'
-            value={pw}
-            onChange={(e) => setPw(e.target.value)}
-            placeholder='Admin password'
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder='Paste your admin key'
             autoComplete='off'
-            data-testid='admin-password'
-            className='h-11'
+            spellCheck={false}
+            data-testid='admin-key'
+            className='h-11 font-mono'
+          />
+          <button
+            type='button'
+            onClick={() => fileRef.current?.click()}
+            className='flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground'
+          >
+            <KeyRound className='h-3.5 w-3.5' /> Load key file…
+          </button>
+          <input
+            ref={fileRef}
+            type='file'
+            accept='.txt,text/plain'
+            className='hidden'
+            onChange={(e) => void loadFile(e.target.files?.[0])}
+            data-testid='admin-key-file'
           />
           {error && <p className='text-sm text-destructive'>{error}</p>}
-          <Button type='submit' className='w-full' disabled={busy || !pw}>
+          <Button type='submit' className='w-full' disabled={busy || !key.trim()}>
             {busy ? 'Checking…' : 'Unlock'}
           </Button>
         </form>
@@ -440,11 +515,13 @@ function AccountTableRow({
   tempPw,
   highlighted,
   onToggleDisabled,
+  onRecover,
 }: {
   account: AdminAccount;
   tempPw?: string;
   highlighted?: boolean;
   onToggleDisabled: () => void;
+  onRecover: () => void;
 }) {
   const status = accountStatus(a);
 
@@ -507,6 +584,9 @@ function AccountTableRow({
                 <KeyRound className='h-3.5 w-3.5' /> Copy temp password
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem onSelect={onRecover} data-testid='admin-recover-action'>
+              <ShieldCheck className='h-3.5 w-3.5' /> Recover access
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </TableCell>
@@ -667,6 +747,154 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <label className='text-xs font-semibold tracking-wider text-muted-foreground uppercase'>{label}</label>
       {children}
     </div>
+  );
+}
+
+// ─── Recover access (escrow) ───────────────────────────────────────────────────
+
+/**
+ * God-access recovery, in-panel. The admin pastes their OFFLINE escrow private
+ * key (never stored, never sent to the server); the panel pulls the sealed
+ * `admin_wrap` for the account and unseals it client-side → the user's recovery
+ * key, which unlocks their account (use it on the Forgot-password screen to
+ * reset / sign in as them). Because the only decryption secret (the escrow
+ * private key) lives in the admin's head/keystore — not on the host — a server
+ * or DB breach still recovers nothing.
+ */
+function RecoverAccessSheet({
+  account,
+  adminPw,
+  escrowPriv,
+  setEscrowPriv,
+  onClose,
+}: {
+  account: AdminAccount | null;
+  adminPw: string;
+  escrowPriv: string;
+  setEscrowPriv: (v: string) => void;
+  onClose: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [recovered, setRecovered] = useState<string | null>(null);
+
+  const open = account !== null;
+  const configured = Boolean(ADMIN_PUBLIC_KEY);
+
+  // clear the revealed key + error whenever the target account changes/closes,
+  // but keep the pasted escrow key (so it's paste-once across accounts)
+  useEffect(() => {
+    setRecovered(null);
+    setError(null);
+    setBusy(false);
+  }, [account?.userId]);
+
+  const reveal = async () => {
+    if (!account || busy) return;
+    const priv = escrowPriv.trim();
+    if (!priv) {
+      setError('Paste your offline escrow private key first.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setRecovered(null);
+    try {
+      await readyCrypto();
+      const { adminWrap } = await getAdminRecovery(adminPw, account.username);
+      const key = openSealedStringWithKeys(adminWrap, ADMIN_PUBLIC_KEY, priv);
+      if (!key) {
+        setError("Couldn't unseal — that escrow key doesn't match this deployment.");
+      } else {
+        setRecovered(key);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Recovery failed';
+      setError(
+        /no admin escrow/i.test(msg)
+          ? 'No escrow on file for this account — it was created before escrow was configured. Have them open Settings → Security → Recovery key once while logged in.'
+          : msg,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent className='flex w-full flex-col sm:max-w-md'>
+        <SheetHeader>
+          <SheetTitle>Recover access</SheetTitle>
+          <SheetDescription>
+            {account
+              ? `Unseal @${account.username}'s recovery key with your offline escrow key. Nothing here is stored or sent to the server.`
+              : null}
+          </SheetDescription>
+        </SheetHeader>
+
+        {!configured ? (
+          <div className='flex-1 space-y-3 px-4 text-sm'>
+            <p className='font-medium text-destructive'>Escrow isn't configured yet.</p>
+            <p className='text-muted-foreground'>
+              No escrow public key is built into this app, so accounts have no recoverable blob. To turn on
+              god-access recovery (one-time):
+            </p>
+            <ol className='list-decimal space-y-1.5 pl-4 text-muted-foreground'>
+              <li>
+                Run <code className='rounded bg-muted px-1 py-0.5 text-xs'>node tools/admin-recover.mjs keygen</code>
+              </li>
+              <li>
+                Put the <strong>public</strong> key in <code className='rounded bg-muted px-1 py-0.5 text-xs'>.env.local</code> as{' '}
+                <code className='rounded bg-muted px-1 py-0.5 text-xs'>VITE_ADMIN_PUBLIC_KEY</code>, then rebuild.
+              </li>
+              <li>
+                Keep the <strong>private</strong> key offline — paste it here when recovering. New accounts get a
+                recoverable blob automatically from then on.
+              </li>
+            </ol>
+          </div>
+        ) : recovered ? (
+          <div className='flex-1 space-y-3 px-4'>
+            <p className='text-sm text-muted-foreground'>
+              This unlocks @{account?.username}'s account — use it on the <strong>Forgot password?</strong> screen to
+              reset their password (data is preserved) or sign in as them.
+            </p>
+            <CredentialRow label='Recovery key' value={formatRecoveryKey(recovered)} testId='admin-recovered-key' />
+          </div>
+        ) : (
+          <div className='flex-1 space-y-3 px-4'>
+            <Field label='Escrow private key'>
+              <Input
+                value={escrowPriv}
+                onChange={(e) => setEscrowPriv(e.target.value)}
+                placeholder='paste your offline escrow private key'
+                autoCapitalize='none'
+                autoComplete='off'
+                spellCheck={false}
+                className='font-mono'
+                data-testid='admin-escrow-key'
+              />
+            </Field>
+            <p className='text-xs text-muted-foreground'>
+              Held in memory for this session only — never written to disk or sent to the server.
+            </p>
+            {error && <p className='text-sm text-destructive'>{error}</p>}
+          </div>
+        )}
+
+        <SheetFooter>
+          {configured && !recovered ? (
+            <Button onClick={() => void reveal()} disabled={busy || !escrowPriv.trim()} className='w-full'>
+              {busy ? 'Recovering…' : 'Reveal recovery key'}
+            </Button>
+          ) : (
+            <Button variant='outline' onClick={onClose} className='w-full'>
+              Close
+            </Button>
+          )}
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
