@@ -7,6 +7,9 @@ import {
   Search,
   Shield,
   ShieldCheck,
+  LockKeyhole,
+  Eye,
+  EyeOff,
   LogOut,
   ChevronLeft,
   UserPlus,
@@ -70,6 +73,7 @@ import {
   listAccounts,
   setAccountDisabled,
   getAdminRecovery,
+  adminResetPassword,
   type AdminAccount,
 } from '@/lib/admin-api';
 
@@ -138,6 +142,7 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   // escrow private key — held in memory for this panel session only, NEVER
   // persisted or sent to the server (paste once, reuse across accounts).
   const [recoverFor, setRecoverFor] = useState<AdminAccount | null>(null);
+  const [resetFor, setResetFor] = useState<AdminAccount | null>(null);
   const [escrowPriv, setEscrowPriv] = useState('');
 
   const refresh = async (adminPw: string) => {
@@ -371,6 +376,7 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
                           highlighted={justCreated === a.username}
                           onToggleDisabled={() => void toggleDisabled(a)}
                           onRecover={() => setRecoverFor(a)}
+                          onReset={() => setResetFor(a)}
                         />
                       ))}
                     </TableBody>
@@ -402,6 +408,13 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
           escrowPriv={escrowPriv}
           setEscrowPriv={setEscrowPriv}
           onClose={() => setRecoverFor(null)}
+        />
+
+        <ResetPasswordSheet
+          account={resetFor}
+          adminProof={pw}
+          escrowPriv={escrowPriv}
+          onClose={() => setResetFor(null)}
         />
       </TooltipProvider>
     </div>
@@ -516,12 +529,14 @@ function AccountTableRow({
   highlighted,
   onToggleDisabled,
   onRecover,
+  onReset,
 }: {
   account: AdminAccount;
   tempPw?: string;
   highlighted?: boolean;
   onToggleDisabled: () => void;
   onRecover: () => void;
+  onReset: () => void;
 }) {
   const status = accountStatus(a);
 
@@ -587,6 +602,11 @@ function AccountTableRow({
             <DropdownMenuItem onSelect={onRecover} data-testid='admin-recover-action'>
               <ShieldCheck className='h-3.5 w-3.5' /> Recover access
             </DropdownMenuItem>
+            {!a.mustSetPassword && (
+              <DropdownMenuItem onSelect={onReset} data-testid='admin-reset-action'>
+                <LockKeyhole className='h-3.5 w-3.5' /> Reset password
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </TableCell>
@@ -893,6 +913,137 @@ function RecoverAccessSheet({
             </Button>
           )}
         </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// ─── Reset password (escrow-driven, keypair-preserving) ─────────────────────────
+
+/**
+ * Set a new password for any account from the admin side, without losing their
+ * chats. Uses the loaded escrow key to recover the account key and re-wrap it
+ * under the new password (see adminResetPassword). Does NOT touch the admin's
+ * own session. Their other devices are signed out and must use the new password.
+ */
+function ResetPasswordSheet({
+  account,
+  adminProof,
+  escrowPriv,
+  onClose,
+}: {
+  account: AdminAccount | null;
+  adminProof: string;
+  escrowPriv: string;
+  onClose: () => void;
+}) {
+  const [pw, setPw] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const open = account !== null;
+
+  useEffect(() => {
+    setPw('');
+    setShow(false);
+    setBusy(false);
+    setError(null);
+    setDone(false);
+  }, [account?.userId]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!account || busy || pw.length < 6) return;
+    if (!escrowPriv.trim()) {
+      setError('Your admin key isn’t loaded — sign out and unlock again with your key file.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await readyCrypto();
+      await adminResetPassword(adminProof, escrowPriv, account.username, pw);
+      setDone(true);
+      toast.success(`Password reset for @${account.username}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Reset failed';
+      setError(
+        /no admin escrow|no recovery|recoverable/i.test(msg)
+          ? 'No escrow on file for this account — it predates escrow. Have them open Settings → Security → Recovery key once, then retry.'
+          : msg,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent className='flex w-full flex-col sm:max-w-md'>
+        <SheetHeader>
+          <SheetTitle>Reset password</SheetTitle>
+          <SheetDescription>
+            {account
+              ? `Set a new password for @${account.username}. Their chats are kept; their other devices are signed out and must use the new password.`
+              : null}
+          </SheetDescription>
+        </SheetHeader>
+
+        {done ? (
+          <div className='flex-1 space-y-3 px-4'>
+            <p className='text-sm text-muted-foreground'>
+              Done — share the new password with @{account?.username}.
+            </p>
+            <CredentialRow label='New password' value={pw} testId='admin-reset-newpw' />
+          </div>
+        ) : (
+          <form onSubmit={submit} className='flex flex-1 flex-col'>
+            <div className='flex-1 space-y-3 px-4'>
+              <Field label='New password'>
+                <div className='relative'>
+                  <Input
+                    type={show ? 'text' : 'password'}
+                    value={pw}
+                    onChange={(e) => setPw(e.target.value)}
+                    placeholder='At least 6 characters'
+                    autoComplete='off'
+                    autoCapitalize='none'
+                    spellCheck={false}
+                    className='pr-9'
+                    data-testid='admin-reset-input'
+                  />
+                  <button
+                    type='button'
+                    onClick={() => setShow((s) => !s)}
+                    className='absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground'
+                    aria-label={show ? 'Hide password' : 'Show password'}
+                  >
+                    {show ? <EyeOff className='h-4 w-4' /> : <Eye className='h-4 w-4' />}
+                  </button>
+                </div>
+              </Field>
+              <p className='text-xs text-muted-foreground'>
+                Recovered through your offline escrow key — the keypair is preserved, so no messages are lost.
+              </p>
+              {error && <p className='text-sm text-destructive'>{error}</p>}
+            </div>
+            <SheetFooter>
+              <Button type='submit' className='w-full' disabled={busy || pw.length < 6}>
+                {busy ? 'Resetting…' : 'Reset password'}
+              </Button>
+            </SheetFooter>
+          </form>
+        )}
+
+        {done && (
+          <SheetFooter>
+            <Button variant='outline' onClick={onClose} className='w-full'>
+              Close
+            </Button>
+          </SheetFooter>
+        )}
       </SheetContent>
     </Sheet>
   );
