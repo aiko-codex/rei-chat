@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   SidebarProvider,
   Sidebar,
@@ -109,6 +110,7 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   }
 
   return (
+    <TooltipProvider>
     <SidebarProvider defaultOpen className='h-full min-h-0'>
       <div className='flex h-full w-full overflow-hidden bg-background'>
         <Sidebar collapsible='icon' className='border-r'>
@@ -203,6 +205,7 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
         </SidebarInset>
       </div>
     </SidebarProvider>
+    </TooltipProvider>
   );
 }
 
