@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
     Check,
+    Gamepad2,
     Image as ImageIcon,
     MapPin,
     Mic,
@@ -28,6 +29,7 @@ const LocationModal = lazy(() =>
     import('./LocationModal').then((m) => ({ default: m.LocationModal })),
 );
 import { gifProviderEnabled } from '@/lib/giphy';
+import { pickRandomWord } from '@/lib/game-words';
 import type { MediaAttachment, Message } from '@/lib/types';
 
 /** which attachment sheet is open (null = none) */
@@ -60,6 +62,8 @@ interface ComposerProps {
     onSendRemoteMedia: (media: MediaAttachment) => void;
     /** start a live location share (omit to hide the option, e.g. unsupported channel) */
     onShareLiveLocation?: (durationMs: number, coords: { lat: number; lng: number }) => void;
+    /** send a drawing that's part of a draw-and-guess game */
+    onSendGame?: (media: MediaAttachment, blob: Blob, word: string) => void;
     /** typing feedback for the peer; throttling happens upstream */
     onTyping?: (typing: boolean) => void;
     replyTo: Message | null;
@@ -76,6 +80,7 @@ export function Composer({
     onSendMedia,
     onSendRemoteMedia,
     onShareLiveLocation,
+    onSendGame,
     onTyping,
     replyTo,
     replyToName,
@@ -93,10 +98,18 @@ export function Composer({
     // the "+" attachment menu + which picker sheet it opened
     const [attachOpen, setAttachOpen] = useState(false);
     const [sheet, setSheet] = useState<AttachSheet>(null);
+    // game-mode: the secret word for the current draw-a-word session
+    const [gameWord, setGameWord] = useState<string | null>(null);
 
     const openSheet = (s: Exclude<AttachSheet, null>) => {
         setAttachOpen(false);
         setSheet(s);
+    };
+
+    const openGameDraw = () => {
+        setGameWord(pickRandomWord());
+        setAttachOpen(false);
+        setSheet('draw');
     };
 
     useEffect(() => {
@@ -280,6 +293,14 @@ export function Composer({
                             onClick={() => openSheet('draw')}
                             testid='attach-draw'
                         />
+                        {onSendGame && (
+                            <AttachRow
+                                icon={<Gamepad2 />}
+                                label='Draw a word'
+                                onClick={openGameDraw}
+                                testid='attach-game'
+                            />
+                        )}
                         <AttachRow
                             icon={<MapPin />}
                             label='Location'
@@ -354,7 +375,13 @@ export function Composer({
                     />
                 )}
                 {sheet === 'draw' && (
-                    <DrawModal open onClose={() => setSheet(null)} onSend={onSendMedia} />
+                    <DrawModal
+                        open
+                        onClose={() => { setSheet(null); setGameWord(null); }}
+                        onSend={onSendMedia}
+                        gameWord={gameWord ?? undefined}
+                        onSendGame={onSendGame}
+                    />
                 )}
                 {sheet === 'location' && (
                     <LocationModal

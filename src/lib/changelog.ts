@@ -24,6 +24,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.12.0',
+    date: '2026-06-27',
+    title: 'Draw-a-word game 🎨',
+    changes: [
+      { kind: 'new', text: 'Tap "+" → "Draw a word" — get a secret word and draw it for the other person to guess' },
+      { kind: 'new', text: '3 guesses — wrong guesses cost hearts, correct guess earns you points' },
+      { kind: 'new', text: 'Points system: +10 for guessing right, +5 for drawing a successful one, −5 for running out of guesses' },
+      { kind: 'new', text: 'Your running score shows inside every game card' },
+    ],
+  },
+  {
     version: '0.11.0',
     date: '2026-06-26',
     title: 'Pinch to zoom',

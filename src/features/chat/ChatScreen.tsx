@@ -346,6 +346,68 @@ export function ChatScreen({
         setReplyTarget(null);
     };
 
+    // draw-and-guess game: send the drawing as a normal sticker but attach
+    // the game round so the guesser sees the guess UI under the drawing
+    const sendGame = (media: MediaAttachment, blob: Blob, word: string) => {
+        const message: Message = {
+            id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            channelId,
+            senderId: currentUserId,
+            media: isConnection ? { ...media, chunked: true } : media,
+            sentAt: Date.now(),
+            status: 'sent',
+            game: { word, status: 'active', guessesLeft: 3, drawerId: currentUserId },
+        };
+        if (SIGNAL_URL) void putBlob(message.id, blob);
+        upsert(message);
+        if (isConnection) {
+            sendPeerMedia(message, blob);
+            const store = useChatStore.getState();
+            store.setTransfer(message.id, 0.01);
+            void (async () => {
+                const ok = await uploadConvMedia(channelId, message.id, blob, (p) =>
+                    store.setTransfer(message.id, p),
+                );
+                store.clearTransfer(message.id);
+                if (ok) void storeConv({ ...message, media: { ...message.media!, url: '' } });
+                else {
+                    const cur = store.messages.find((m) => m.id === message.id);
+                    if (cur) upsert({ ...cur, status: 'failed' });
+                }
+            })();
+        } else if (isDm) {
+            sendPeerMedia(message, blob);
+            if (SIGNAL_URL) {
+                void storeOnServer({ ...message, media: { ...message.media!, url: '' } });
+                const store = useChatStore.getState();
+                store.setTransfer(message.id, 0.01);
+                void uploadMedia(message.id, blob, (p) =>
+                    store.setTransfer(message.id, p),
+                ).finally(() => store.clearTransfer(message.id));
+            }
+        }
+    };
+
+    // process a guess for an active draw-and-guess game
+    const submitGuess = useCallback((msgId: string, guess: string) => {
+        const msg = useChatStore.getState().messages.find((m) => m.id === msgId);
+        if (!msg?.game || msg.game.status !== 'active') return;
+        const correct = guess.trim().toLowerCase() === msg.game.word.toLowerCase();
+        if (correct) {
+            useChatStore.getState().updateGameState(msgId, channelId, 'won', 0, true);
+            toast.success('🎉 Correct! You guessed it!');
+        } else {
+            const remaining = msg.game.guessesLeft - 1;
+            if (remaining <= 0) {
+                useChatStore.getState().updateGameState(msgId, channelId, 'lost', 0, true);
+                toast.error(`❌ Out of guesses! The word was "${msg.game.word}"`);
+            } else {
+                useChatStore.getState().updateGameState(msgId, channelId, 'active', remaining, true);
+                toast.error(`Wrong! ${remaining} ${remaining === 1 ? 'guess' : 'guesses'} left.`);
+            }
+        }
+    }, [channelId]);
+
     // live location share: the message (with its starting position) goes
     // through the normal send path once; position updates patch it in place
     // via the store's encrypted meta overlay (no re-send of the whole message)
@@ -622,6 +684,7 @@ export function ChatScreen({
                 onRetry={retry}
                 onDoubleTapReact={isDm || isConnection ? toggleDefaultReaction : undefined}
                 onStopLiveLocation={stopLiveLocation}
+                onGuess={submitGuess}
                 onSwipeReply={(m) => {
                     setEditTarget(null);
                     setReplyTarget(m);
@@ -668,6 +731,7 @@ export function ChatScreen({
                 onSend={send}
                 onSendMedia={sendMedia}
                 onSendRemoteMedia={sendRemoteMedia}
+                onSendGame={isDm || isConnection ? sendGame : undefined}
                 onShareLiveLocation={isDm || isConnection ? sendLiveLocation : undefined}
                 onTyping={isDm ? sendPeerTyping : isConnection ? sendConnTyping : undefined}
                 replyTo={replyTarget}

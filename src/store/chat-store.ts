@@ -351,6 +351,18 @@ interface ChatStore {
     id: string,
     patch: Partial<NonNullable<Message['liveLocation']>>,
   ) => void;
+
+  // ── Draw-a-word game ─────────────────────────────────────────────────────
+  /** running total of this device's game points (persisted to localStorage) */
+  gamePoints: number;
+  /** update game state after a guess; syncs via meta overlay + awards/deducts points */
+  updateGameState: (
+    msgId: string,
+    channelId: string | undefined,
+    status: 'active' | 'won' | 'lost',
+    guessesLeft: number,
+    iAmGuesser: boolean,
+  ) => void;
 }
 
 type DateOverlayValue =
@@ -441,6 +453,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   datesByChannel: {},
   myMood: readJson<Mood>(MY_MOOD_KEY),
   peerMood: readJson<Mood>(PEER_MOOD_KEY),
+  gamePoints: readNum('rei-game-points'),
 
   hydrate: async () => {
     if (!persistent || get().hydrated || !isPaired()) return;
@@ -530,6 +543,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           applyDateOverlay(get, set, DM_CHANNEL_ID, row.key.slice('date:'.length), row.value);
         } else if (row.key.startsWith('loc:')) {
           applyLiveLocationOverlay(get, set, row.key.slice('loc:'.length), row.value);
+        } else if (row.key.startsWith('game:') && !row.mine) {
+          const msgId = row.key.slice('game:'.length);
+          const v = row.value as { status?: string; guessesLeft?: number } | null;
+          if (v && (v.status === 'won' || v.status === 'lost' || v.status === 'active')) {
+            const current = get().messages.find((m) => m.id === msgId);
+            if (current?.game && current.game.status === 'active') {
+              const status = v.status as 'active' | 'won' | 'lost';
+              const next = { ...current, game: { ...current.game, status, guessesLeft: v.guessesLeft ?? 0 } };
+              set({ messages: get().messages.map((m) => (m.id === msgId ? next : m)) });
+              if (persistent) void putMessage(next);
+              if (status !== 'active') {
+                const delta = status === 'won' ? 5 : 0;
+                if (delta !== 0) {
+                  const pts = get().gamePoints + delta;
+                  localStorage.setItem('rei-game-points', String(pts));
+                  set({ gamePoints: pts });
+                }
+              }
+            }
+          }
         } else if (row.key === 'mood' && !row.mine) {
           const mood = row.value as Mood | null;
           set({ peerMood: mood });
@@ -975,6 +1008,34 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
+  updateGameState: (msgId, channelId, status, guessesLeft, iAmGuesser) => {
+    const current = get().messages.find((m) => m.id === msgId);
+    if (!current?.game) return;
+    const updatedGame = { ...current.game, status, guessesLeft };
+    const next = { ...current, game: updatedGame };
+    set({ messages: get().messages.map((m) => (m.id === msgId ? next : m)) });
+    if (persistent) void putMessage(next);
+    // award/deduct points when the game resolves
+    if (status !== 'active') {
+      let delta = 0;
+      if (status === 'won') delta = iAmGuesser ? 10 : 5;
+      else if (status === 'lost') delta = iAmGuesser ? -5 : 0;
+      if (delta !== 0) {
+        const pts = get().gamePoints + delta;
+        localStorage.setItem('rei-game-points', String(pts));
+        set({ gamePoints: pts });
+      }
+    }
+    if (!persistent) return;
+    const at = Date.now();
+    const value = { status, guessesLeft, at };
+    if (channelId && channelId !== DM_CHANNEL_ID && get().connectionPeers[channelId]) {
+      void uploadConvMeta(channelId, `game:${msgId}`, value);
+    } else {
+      void uploadMeta(`game:${msgId}`, value);
+    }
+  },
+
   hideMessages: (ids, hidden) => {
     const idSet = new Set(ids);
     set((s) => ({
@@ -1290,6 +1351,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           applyDateOverlay(get, set, connectionId, row.key.slice('date:'.length), row.value);
         } else if (row.key.startsWith('loc:')) {
           applyLiveLocationOverlay(get, set, row.key.slice('loc:'.length), row.value);
+        } else if (row.key.startsWith('game:') && !row.mine) {
+          const msgId = row.key.slice('game:'.length);
+          const v = row.value as { status?: string; guessesLeft?: number } | null;
+          if (v && (v.status === 'won' || v.status === 'lost' || v.status === 'active')) {
+            const current = get().messages.find((m) => m.id === msgId);
+            if (current?.game && current.game.status === 'active') {
+              const status = v.status as 'active' | 'won' | 'lost';
+              const next = { ...current, game: { ...current.game, status, guessesLeft: v.guessesLeft ?? 0 } };
+              set({ messages: get().messages.map((m) => (m.id === msgId ? next : m)) });
+              if (persistent) void putMessage(next);
+              if (status !== 'active') {
+                const delta = status === 'won' ? 5 : 0;
+                if (delta !== 0) {
+                  const pts = get().gamePoints + delta;
+                  localStorage.setItem('rei-game-points', String(pts));
+                  set({ gamePoints: pts });
+                }
+              }
+            }
+          }
         } else if (row.key === 'mood' && !row.mine) {
           const mood = row.value as Mood | null;
           set({
