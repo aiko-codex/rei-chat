@@ -8,7 +8,7 @@ import { Composer } from './Composer';
 import { Lightbox } from './Lightbox';
 import { TodoChannelScreen } from '@/features/todo/TodoChannelScreen';
 import { SIGNAL_URL } from '@/lib/config';
-import { putBlob } from '@/lib/db';
+import { getBlob, putBlob } from '@/lib/db';
 import {
     removeRemoteMessage,
     uploadMedia,
@@ -121,6 +121,10 @@ export function ChatScreen({
         // bring up a P2P link for this connection so voice/video calls + the
         // voice room can negotiate (messages still ride the server truth lane)
         startConnectionPeer(channelId);
+        // eagerly sync once on open so any media that arrived while we were
+        // away (or whose blob is missing from IndexedDB) loads immediately,
+        // without having to wait for the long-poll to return a new message
+        void syncConversation(channelId);
         let active = true;
         const cursorKey = `rei-conv-cursor:${channelId}`;
         const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -257,7 +261,24 @@ export function ChatScreen({
         upsert(optimistic);
         sendPeerMessage(optimistic);
         if (isConnection) {
-            void storeConv(optimistic);
+            if (message.media && !message.media.remote) {
+                // media retry: re-upload the encrypted bytes first, then store
+                // the metadata row (same order as the original send)
+                void (async () => {
+                    const blob = await getBlob(message.id);
+                    if (!blob) { upsert({ ...optimistic, status: 'failed' }); return; }
+                    const store = useChatStore.getState();
+                    store.setTransfer(message.id, 0.01);
+                    const ok = await uploadConvMedia(channelId, message.id, blob, (p) =>
+                        store.setTransfer(message.id, p),
+                    );
+                    store.clearTransfer(message.id);
+                    if (ok) void storeConv({ ...optimistic, media: { ...optimistic.media!, url: '' } });
+                    else upsert({ ...optimistic, status: 'failed' });
+                })();
+            } else {
+                void storeConv(optimistic);
+            }
             return;
         }
         if (SIGNAL_URL) void storeOnServer(optimistic);
@@ -305,18 +326,20 @@ export function ChatScreen({
             // stream the bytes to the peer live over the binary media channel
             sendPeerMedia(message, blob);
             if (SIGNAL_URL) {
-                // back up to the server so it restores on a new device: the
-                // metadata row (object URL stripped) + the encrypted bytes,
-                // surfacing upload progress on the bubble as it streams up
-                void storeOnServer({
-                    ...message,
-                    media: { ...message.media!, url: '' },
-                });
+                // upload bytes FIRST, then store the metadata row so the receiver
+                // can always decrypt whatever the history cursor surfaces
                 const store = useChatStore.getState();
                 store.setTransfer(message.id, 0.01);
                 void uploadMedia(message.id, blob, (p) =>
                     store.setTransfer(message.id, p),
-                ).finally(() => store.clearTransfer(message.id));
+                ).then((ok) => {
+                    store.clearTransfer(message.id);
+                    if (ok) void storeOnServer({ ...message, media: { ...message.media!, url: '' } });
+                    else {
+                        const cur = useChatStore.getState().messages.find((m) => m.id === message.id);
+                        if (cur) upsert({ ...cur, status: 'failed' });
+                    }
+                });
             }
         }
         setReplyTarget(null);
@@ -378,12 +401,18 @@ export function ChatScreen({
         } else if (isDm) {
             sendPeerMedia(message, blob);
             if (SIGNAL_URL) {
-                void storeOnServer({ ...message, media: { ...message.media!, url: '' } });
                 const store = useChatStore.getState();
                 store.setTransfer(message.id, 0.01);
                 void uploadMedia(message.id, blob, (p) =>
                     store.setTransfer(message.id, p),
-                ).finally(() => store.clearTransfer(message.id));
+                ).then((ok) => {
+                    store.clearTransfer(message.id);
+                    if (ok) void storeOnServer({ ...message, media: { ...message.media!, url: '' } });
+                    else {
+                        const cur = useChatStore.getState().messages.find((m) => m.id === message.id);
+                        if (cur) upsert({ ...cur, status: 'failed' });
+                    }
+                });
             }
         }
     };

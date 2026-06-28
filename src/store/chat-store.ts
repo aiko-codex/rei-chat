@@ -819,13 +819,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     try {
       const since = await getHistoryCursor();
       const { messages: remote, cursor } = await fetchHistory(since);
+      const sRank = (s?: string) => ({ read: 3, delivered: 2, sent: 1, failed: 0 } as Record<string, number>)[s ?? 'sent'] ?? 0;
       for (const { mine, message } of remote) {
         // sender stored it from their own perspective — normalize to ours
+        const incoming = mine ? message.status : 'delivered';
+        // never downgrade 'delivered'/'read' that arrived via P2P fast lane
+        // (server copy was encrypted with the optimistic 'sent' value)
+        const existing = mine ? get().messages.find((m) => m.id === message.id) : null;
+        const status = (existing && sRank(existing.status) > sRank(incoming))
+          ? existing.status
+          : incoming;
         const normalized: Message = {
           ...message,
           channelId: DM_CHANNEL_ID,
           senderId: mine ? 'me' : 'her',
-          status: mine ? message.status : 'delivered',
+          status,
         };
         get().upsert(normalized);
         // pull the encrypted media bytes if this row carries an attachment
@@ -849,9 +857,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       message = { ...message, status: 'read' };
     }
     set((s) => ({ messages: sortedUpsert(s.messages, message) }));
-    // the media Blob is persisted separately (db `blobs`); the row keeps only
-    // metadata + a per-session object URL that we rebuild from the blob on load
-    if (persistent) void putMessage(message);
+    // the media Blob is persisted separately (db `blobs`); strip the
+    // blob:// URL before persisting the row — it's session-specific and
+    // becomes stale on reload. hydrateAccount rebuilds it from the blob store.
+    if (persistent) {
+      const toStore = message.media && !message.media.remote
+        ? { ...message, media: { ...message.media, url: '' } }
+        : message;
+      void putMessage(toStore);
+    }
     // shared (accepted-collab) channel rows are backed up room-keyed so both
     // devices converge; personal channels stay device-local (the DM has its
     // own ciphertext store)
@@ -1285,13 +1299,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!persistent || !connectionId) return;
     const cursorKey = `rei-conv-cursor:${connectionId}`;
     const since = readNum(cursorKey);
+    // status-rank helper: higher = more advanced delivery state
+    const sRank = (s?: string) => ({ read: 3, delivered: 2, sent: 1, failed: 0 } as Record<string, number>)[s ?? 'sent'] ?? 0;
     try {
       const { messages, cursor } = await fetchConvHistory(connectionId, since);
-      for (const { message } of messages) {
+      for (const { message, mine } of messages) {
         // messages carry the connection as their channel id locally
-        const local: Message = { ...message, channelId: connectionId };
+        let local: Message = { ...message, channelId: connectionId };
+        const cur = get().messages.find((m) => m.id === local.id);
+        // own messages: server copy was encrypted with 'sent' — never let a
+        // re-sync silently downgrade 'delivered'/'read' that arrived via P2P
+        if (mine && cur && sRank(cur.status) > sRank(local.status))
+          local = { ...local, status: cur.status };
+        // keep an already-live blob URL to avoid a "Loading…" flash on re-sync
+        if (local.media && !local.media.url && !local.media.remote && cur?.media?.url)
+          local = { ...local, media: { ...local.media, url: cur.media.url } };
         get().upsert(local);
-        if (persistent) void putMessage(local);
         // media rows arrive with an empty url — pull + decrypt the bytes
         // (remote media has no bytes; its url is the public asset, keep it)
         if (local.media && !local.media.url && !local.media.remote) {
@@ -1309,6 +1332,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (cursor > since) localStorage.setItem(cursorKey, String(cursor));
     } catch {
       // offline / unreachable — retry on the next poll
+    }
+    // backfill: any older messages in this conversation whose blob isn't in
+    // IndexedDB (e.g. cleared storage, or a P2P delivery on a previous session
+    // that didn't cache the blob). Download from server so they stop showing
+    // "Loading..." — only fires for messages whose url is genuinely empty.
+    for (const m of get().messages) {
+      if (m.channelId !== connectionId || !m.media || m.media.url || m.media.remote) continue;
+      void (async () => {
+        const existing = await getBlob(m.id);
+        const blob =
+          existing ??
+          (await downloadConvMedia(connectionId, m.id, m.media!.mimeType, m.media!.chunked));
+        if (!blob) return;
+        if (!existing) await putBlob(m.id, blob);
+        get().upsert({ ...m, media: { ...m.media!, url: URL.createObjectURL(blob) } });
+      })();
     }
     // overlays (reactions + read receipts) ride the same poll
     void get().syncConvMeta(connectionId);

@@ -24,6 +24,24 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.12.2',
+    date: '2026-06-28',
+    title: 'Message status fixes',
+    changes: [
+      { kind: 'fix', text: 'Messages no longer flicker back to "sent" after already showing as delivered or read' },
+      { kind: 'fix', text: 'Photos no longer flash "Loading…" when the chat refreshes and the image was already loaded' },
+    ],
+  },
+  {
+    version: '0.12.1',
+    date: '2026-06-28',
+    title: 'Media reliability fixes',
+    changes: [
+      { kind: 'fix', text: 'Photos and videos now reload correctly every time you open the chat' },
+      { kind: 'fix', text: 'Tapping "retry" on a failed image/video now re-uploads the file properly' },
+    ],
+  },
+  {
     version: '0.12.0',
     date: '2026-06-27',
     title: 'Draw-a-word game 🎨',

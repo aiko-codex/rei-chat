@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useChatStore } from '@/store/chat-store';
 import { LiveLocationContent } from './LiveLocationContent';
 import type { MediaAttachment, Message } from '@/lib/types';
@@ -108,6 +109,131 @@ function VoiceNote({ media, isMine }: { media: MediaAttachment; isMine: boolean 
   );
 }
 
+// Photo / location image — skeleton while bytes or browser decode are pending,
+// then a smooth opacity reveal via motion once the image is actually painted.
+// `key={media.url}` at the call site remounts this on URL change → resets state.
+function MediaImageContent({
+  media,
+  onOpenImage,
+}: {
+  media: MediaAttachment;
+  onOpenImage?: () => void;
+}) {
+  const [loaded, setLoaded] = useState(false);
+
+  if (media.coords) {
+    const { lat, lng } = media.coords;
+    const mapsUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`;
+    return (
+      <span className="relative block overflow-hidden rounded-2xl ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15">
+        {/* skeleton visible until the image has painted */}
+        {!loaded && (
+          <Skeleton className={cn('rounded-2xl', media.url ? 'absolute inset-0' : 'h-48 w-full')} />
+        )}
+        {media.url && (
+          <>
+            <motion.img
+              src={media.url}
+              alt="Shared location"
+              onClick={onOpenImage}
+              onLoad={() => setLoaded(true)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: loaded ? 1 : 0 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              className="max-h-80 w-full cursor-pointer object-cover"
+              data-testid="media-location"
+            />
+            {loaded && (
+              <a
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm [&_svg]:size-3.5"
+              >
+                <MapPin /> Open in Maps
+              </a>
+            )}
+          </>
+        )}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="relative block overflow-hidden rounded-2xl ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15"
+      data-testid="media-image"
+    >
+      {!loaded && (
+        <Skeleton className={cn('rounded-2xl', media.url ? 'absolute inset-0' : 'h-48 w-full')} />
+      )}
+      {media.url && (
+        <motion.img
+          src={media.url}
+          alt={media.name}
+          onClick={onOpenImage}
+          onLoad={() => setLoaded(true)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: loaded ? 1 : 0 }}
+          transition={{ duration: 0.3, ease: 'easeOut' }}
+          className="max-h-80 w-full cursor-pointer object-cover"
+        />
+      )}
+    </span>
+  );
+}
+
+// Video — skeleton while the first frame is decoding, then reveal the poster
+// + play button together so they never appear at different times.
+// `key={media.url}` at the call site remounts on URL change → resets state.
+function MediaVideoContent({
+  media,
+  onOpenVideo,
+}: {
+  media: MediaAttachment;
+  onOpenVideo?: () => void;
+}) {
+  const [ready, setReady] = useState(false);
+
+  return (
+    <span
+      className="relative block cursor-pointer overflow-hidden rounded-2xl ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15"
+      data-testid="media-video"
+      onClick={onOpenVideo}
+    >
+      {!ready && (
+        <Skeleton className={cn('rounded-2xl', media.url ? 'absolute inset-0' : 'h-48 w-full')} />
+      )}
+      {media.url && (
+        <>
+          <motion.video
+            src={media.url}
+            preload="metadata"
+            muted
+            playsInline
+            onLoadedMetadata={() => setReady(true)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: ready ? 1 : 0 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="pointer-events-none max-h-80 w-full object-cover"
+          />
+          <motion.span
+            className="absolute inset-0 flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: ready ? 1 : 0 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+          >
+            <span className="flex size-12 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm [&_svg]:size-6 [&_svg]:translate-x-0.5">
+              <Play />
+            </span>
+          </motion.span>
+        </>
+      )}
+    </span>
+  );
+}
+
 function MediaContent({
   media,
   isMine,
@@ -117,8 +243,35 @@ function MediaContent({
   isMine: boolean;
   onOpenImage?: () => void;
 }) {
-  // restoring from the server backup — bytes not in hand yet
-  if (!media.url && media.kind !== 'voice') {
+  if (media.kind === 'image') {
+    // stickers / drawn doodles: transparent, frameless, small
+    if (media.sticker) {
+      if (!media.url) return (
+        <Skeleton className="h-20 w-24 rounded-xl" data-testid="media-loading" />
+      );
+      return (
+        <motion.img
+          src={media.url}
+          alt={media.name}
+          className="max-h-40 w-auto max-w-[60%] object-contain"
+          data-testid="media-sticker"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.25, ease: 'easeOut' }}
+        />
+      );
+    }
+    // image and location: skeleton + fade-in (remount on url change resets state)
+    return <MediaImageContent key={media.url} media={media} onOpenImage={onOpenImage} />;
+  }
+  if (media.kind === 'video') {
+    return <MediaVideoContent key={media.url} media={media} onOpenVideo={onOpenImage} />;
+  }
+  if (media.kind === 'voice') {
+    return <VoiceNote media={media} isMine={isMine} />;
+  }
+  // file — plain loading placeholder while bytes aren't ready
+  if (!media.url) {
     return (
       <span
         className="flex h-24 w-40 animate-pulse items-center justify-center rounded-xl bg-foreground/5 text-xs text-muted-foreground"
@@ -127,80 +280,6 @@ function MediaContent({
         Loading…
       </span>
     );
-  }
-  if (media.kind === 'image') {
-    // stickers / drawn doodles: transparent, frameless, small, not zoomable
-    if (media.sticker) {
-      return (
-        <img
-          src={media.url}
-          alt={media.name}
-          className="max-h-40 w-auto max-w-[60%] object-contain"
-          data-testid="media-sticker"
-        />
-      );
-    }
-    // shared location: the encrypted map snapshot + an "Open in Maps" action
-    if (media.coords) {
-      const { lat, lng } = media.coords;
-      const mapsUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`;
-      return (
-        <span className="relative block overflow-hidden rounded-2xl ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15">
-          <img
-            src={media.url}
-            alt="Shared location"
-            onClick={onOpenImage}
-            className="max-h-80 w-full cursor-pointer object-cover"
-            data-testid="media-location"
-          />
-          <a
-            href={mapsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm [&_svg]:size-3.5"
-          >
-            <MapPin /> Open in Maps
-          </a>
-        </span>
-      );
-    }
-    return (
-      <img
-        src={media.url}
-        alt={media.name}
-        onClick={onOpenImage}
-        className="max-h-80 w-full cursor-pointer rounded-2xl object-cover ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15"
-        data-testid="media-image"
-      />
-    );
-  }
-  if (media.kind === 'video') {
-    // show the first frame as a poster with a play affordance; tapping opens
-    // the fullscreen modal player (no inline controls — keeps the bubble clean)
-    return (
-      <div
-        onClick={onOpenImage}
-        className="relative cursor-pointer overflow-hidden rounded-2xl ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15"
-        data-testid="media-video"
-      >
-        <video
-          src={media.url}
-          preload="metadata"
-          muted
-          playsInline
-          className="pointer-events-none max-h-80 w-full object-cover"
-        />
-        <span className="absolute inset-0 flex items-center justify-center">
-          <span className="flex size-12 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm [&_svg]:size-6 [&_svg]:translate-x-0.5">
-            <Play />
-          </span>
-        </span>
-      </div>
-    );
-  }
-  if (media.kind === 'voice') {
-    return <VoiceNote media={media} isMine={isMine} />;
   }
   return (
     <a
