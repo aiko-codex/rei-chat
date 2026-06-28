@@ -24,6 +24,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.12.3',
+    date: '2026-06-28',
+    title: 'Voice notes & media polish',
+    changes: [
+      { kind: 'fix', text: 'Voice notes from her now play correctly — tap the play button once and hear it' },
+      { kind: 'fix', text: 'Photos and videos show a retry button if they fail to load instead of being stuck' },
+      { kind: 'fix', text: 'Unsending a message now removes it from the other person\'s chat even if they were offline' },
+      { kind: 'improve', text: 'Reply quotes for photos and videos now show a small thumbnail' },
+      { kind: 'improve', text: 'The "Sent" status label has been removed — the single tick is self-explanatory' },
+    ],
+  },
+  {
     version: '0.12.2',
     date: '2026-06-28',
     title: 'Message status fixes',

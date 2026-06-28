@@ -32,7 +32,20 @@ const WAVEFORM = [5, 9, 14, 8, 12, 16, 10, 6, 11, 15, 9, 13, 7, 12, 16, 10, 5, 9
 function VoiceNote({ media, isMine }: { media: MediaAttachment; isMine: boolean }) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0); // 0..1
+  const [error, setError] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Discard the audio element whenever the URL changes (e.g., async download
+  // completed) so the next tap uses the fresh URL.
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      setPlaying(false);
+      setProgress(0);
+    }
+    setError(false);
+  }, [media.url]);
 
   useEffect(() => {
     return () => {
@@ -42,11 +55,7 @@ function VoiceNote({ media, isMine }: { media: MediaAttachment; isMine: boolean 
   }, []);
 
   const toggle = () => {
-    if (!media.url) {
-      // legacy mock notes have no audio
-      setPlaying((p) => !p);
-      return;
-    }
+    if (!media.url) return; // still downloading — button is disabled
     if (!audioRef.current) {
       const audio = new Audio(media.url);
       audio.ontimeupdate = () => {
@@ -63,23 +72,38 @@ function VoiceNote({ media, isMine }: { media: MediaAttachment; isMine: boolean 
       audioRef.current.pause();
       setPlaying(false);
     } else {
-      void audioRef.current.play();
+      setError(false);
       setPlaying(true);
+      audioRef.current.play().catch(() => {
+        setError(true);
+        setPlaying(false);
+        audioRef.current = null; // allow retry
+      });
     }
   };
+
+  const isLoading = !media.url;
 
   return (
     <span className="flex items-center gap-2 py-1" data-testid="voice-note">
       <button
         onClick={toggle}
-        aria-label={playing ? 'Pause voice note' : 'Play voice note'}
+        disabled={isLoading}
+        aria-label={playing ? 'Pause voice note' : isLoading ? 'Loading…' : 'Play voice note'}
         data-testid="voice-note-play-btn"
         className={cn(
-          'flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full [&_svg]:size-4',
+          'flex size-8 shrink-0 items-center justify-center rounded-full [&_svg]:size-4',
+          isLoading ? 'opacity-40' : 'cursor-pointer',
           isMine ? 'bg-primary-foreground/20' : 'bg-foreground/10',
         )}
       >
-        {playing ? <Pause /> : <Play className="ml-0.5" />}
+        {isLoading ? (
+          <span className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        ) : playing ? (
+          <Pause />
+        ) : (
+          <Play className="ml-0.5" />
+        )}
       </button>
       <span className="flex h-8 items-center gap-0.5">
         {WAVEFORM.map((h, i) => {
@@ -102,8 +126,17 @@ function VoiceNote({ media, isMine }: { media: MediaAttachment; isMine: boolean 
           );
         })}
       </span>
-      <span className={cn('text-xs', isMine ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
-        {formatDuration(media.duration ?? 0)}
+      <span className={cn('min-w-0 text-xs', isMine ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
+        {error ? (
+          <button
+            onClick={() => { setError(false); audioRef.current = null; toggle(); }}
+            className="font-medium text-destructive underline underline-offset-2"
+          >
+            Retry
+          </button>
+        ) : (
+          formatDuration(media.duration ?? 0)
+        )}
       </span>
     </span>
   );
@@ -115,19 +148,35 @@ function VoiceNote({ media, isMine }: { media: MediaAttachment; isMine: boolean 
 function MediaImageContent({
   media,
   onOpenImage,
+  onRetryLoad,
 }: {
   media: MediaAttachment;
   onOpenImage?: () => void;
+  onRetryLoad?: () => void;
 }) {
   const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
+
+  const errorOverlay = errored && (
+    <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/80 rounded-2xl">
+      <span className="text-xs text-muted-foreground">Could not load</span>
+      {onRetryLoad && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setErrored(false); onRetryLoad(); }}
+          className="rounded-full bg-background px-3 py-1 text-xs font-medium shadow-sm"
+        >
+          Retry
+        </button>
+      )}
+    </span>
+  );
 
   if (media.coords) {
     const { lat, lng } = media.coords;
     const mapsUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`;
     return (
       <span className="relative block overflow-hidden rounded-2xl ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15">
-        {/* skeleton visible until the image has painted */}
-        {!loaded && (
+        {!loaded && !errored && (
           <Skeleton className={cn('rounded-2xl', media.url ? 'absolute inset-0' : 'h-48 w-full')} />
         )}
         {media.url && (
@@ -135,8 +184,10 @@ function MediaImageContent({
             <motion.img
               src={media.url}
               alt="Shared location"
+              loading="lazy"
               onClick={onOpenImage}
               onLoad={() => setLoaded(true)}
+              onError={() => setErrored(true)}
               initial={{ opacity: 0 }}
               animate={{ opacity: loaded ? 1 : 0 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
@@ -156,6 +207,7 @@ function MediaImageContent({
             )}
           </>
         )}
+        {errorOverlay}
       </span>
     );
   }
@@ -165,21 +217,24 @@ function MediaImageContent({
       className="relative block overflow-hidden rounded-2xl ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15"
       data-testid="media-image"
     >
-      {!loaded && (
+      {!loaded && !errored && (
         <Skeleton className={cn('rounded-2xl', media.url ? 'absolute inset-0' : 'h-48 w-full')} />
       )}
       {media.url && (
         <motion.img
           src={media.url}
           alt={media.name}
+          loading="lazy"
           onClick={onOpenImage}
           onLoad={() => setLoaded(true)}
+          onError={() => setErrored(true)}
           initial={{ opacity: 0 }}
           animate={{ opacity: loaded ? 1 : 0 }}
           transition={{ duration: 0.3, ease: 'easeOut' }}
           className="max-h-80 w-full cursor-pointer object-cover"
         />
       )}
+      {errorOverlay}
     </span>
   );
 }
@@ -190,19 +245,22 @@ function MediaImageContent({
 function MediaVideoContent({
   media,
   onOpenVideo,
+  onRetryLoad,
 }: {
   media: MediaAttachment;
   onOpenVideo?: () => void;
+  onRetryLoad?: () => void;
 }) {
   const [ready, setReady] = useState(false);
+  const [errored, setErrored] = useState(false);
 
   return (
     <span
       className="relative block cursor-pointer overflow-hidden rounded-2xl ring-1 ring-inset ring-black/10 shadow-sm dark:ring-white/15"
       data-testid="media-video"
-      onClick={onOpenVideo}
+      onClick={errored ? undefined : onOpenVideo}
     >
-      {!ready && (
+      {!ready && !errored && (
         <Skeleton className={cn('rounded-2xl', media.url ? 'absolute inset-0' : 'h-48 w-full')} />
       )}
       {media.url && (
@@ -213,6 +271,7 @@ function MediaVideoContent({
             muted
             playsInline
             onLoadedMetadata={() => setReady(true)}
+            onError={() => setErrored(true)}
             initial={{ opacity: 0 }}
             animate={{ opacity: ready ? 1 : 0 }}
             transition={{ duration: 0.3, ease: 'easeOut' }}
@@ -230,6 +289,19 @@ function MediaVideoContent({
           </motion.span>
         </>
       )}
+      {errored && (
+        <span className="flex h-48 flex-col items-center justify-center gap-2 bg-muted/80 rounded-2xl">
+          <span className="text-xs text-muted-foreground">Could not load video</span>
+          {onRetryLoad && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setErrored(false); onRetryLoad(); }}
+              className="rounded-full bg-background px-3 py-1 text-xs font-medium shadow-sm"
+            >
+              Retry
+            </button>
+          )}
+        </span>
+      )}
     </span>
   );
 }
@@ -243,6 +315,8 @@ function MediaContent({
   isMine: boolean;
   onOpenImage?: () => void;
 }) {
+  const [retryNonce, setRetryNonce] = useState(0);
+  const retry = () => setRetryNonce((n) => n + 1);
   if (media.kind === 'image') {
     // stickers / drawn doodles: transparent, frameless, small
     if (media.sticker) {
@@ -261,11 +335,11 @@ function MediaContent({
         />
       );
     }
-    // image and location: skeleton + fade-in (remount on url change resets state)
-    return <MediaImageContent key={media.url} media={media} onOpenImage={onOpenImage} />;
+    // image and location: skeleton + fade-in (remount on url/retry change resets state)
+    return <MediaImageContent key={`${media.url}-${retryNonce}`} media={media} onOpenImage={onOpenImage} onRetryLoad={retry} />;
   }
   if (media.kind === 'video') {
-    return <MediaVideoContent key={media.url} media={media} onOpenVideo={onOpenImage} />;
+    return <MediaVideoContent key={`${media.url}-${retryNonce}`} media={media} onOpenVideo={onOpenImage} onRetryLoad={retry} />;
   }
   if (media.kind === 'voice') {
     return <VoiceNote media={media} isMine={isMine} />;
@@ -539,7 +613,7 @@ export function MessageBubble({
   const statusIcon = !isMine ? null : message.status === 'failed' ? (
     <CircleAlert className="size-3" data-testid={`status-failed-${message.id}`} />
   ) : message.status === 'read' ? (
-    <CheckCheck className="size-3 text-sky-300" data-testid={`status-read-${message.id}`} />
+    <CheckCheck className="size-3 text-sky-400" data-testid={`status-read-${message.id}`} />
   ) : message.status === 'delivered' ? (
     <CheckCheck className="size-3" />
   ) : (
@@ -547,13 +621,14 @@ export function MessageBubble({
   );
 
   // iMessage-style status word under the most-recent outgoing message
+  // Only show "Seen" / "Delivered" — single-tick is self-explanatory, no "Sent" label needed
   const statusWord =
     isMine && isLastOwn && message.status !== 'failed'
       ? message.status === 'read'
         ? 'Seen'
         : message.status === 'delivered'
           ? 'Delivered'
-          : 'Sent'
+          : null
       : null;
 
   return (
@@ -627,7 +702,14 @@ export function MessageBubble({
             <span className="px-2 text-[11px] text-muted-foreground">
               {isMine ? 'You replied' : `${displayName(message.senderId)} replied`}
             </span>
-            <span className="flex max-w-[15rem] items-center gap-1 truncate rounded-2xl bg-muted/70 px-3 py-1.5 text-xs text-muted-foreground">
+            <span className="flex max-w-[15rem] items-center gap-1.5 truncate rounded-2xl bg-muted/70 px-2.5 py-1.5 text-xs text-muted-foreground">
+              {(replyTo.media?.kind === 'image' || replyTo.media?.kind === 'video') && replyTo.media?.url && (
+                <img
+                  src={replyTo.media.url}
+                  alt=""
+                  className="h-8 w-8 shrink-0 rounded object-cover"
+                />
+              )}
               <QuoteIcon kind={replyTo.media?.kind} />
               <span className="truncate">{quoteSnippet(replyTo)}</span>
             </span>

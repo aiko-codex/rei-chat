@@ -373,3 +373,16 @@ export async function downloadConvMedia(
     return null;
   }
 }
+
+/** fetch unsent-message tombstones after a seq cursor */
+export async function fetchConvDeletes(
+  connectionId: string,
+  since: number,
+): Promise<{ ids: string[]; cursor: number }> {
+  const res = await fetch(
+    `${SIGNAL_URL}?action=c_deletes&connectionId=${encodeURIComponent(connectionId)}&since=${since}${tokenParam()}`,
+  );
+  if (!res.ok) return { ids: [], cursor: since };
+  const data: { ids: string[]; cursor: number } = await res.json();
+  return data;
+}

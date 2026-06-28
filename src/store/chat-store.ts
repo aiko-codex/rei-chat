@@ -54,6 +54,7 @@ import {
 import {
   deleteConvLocal,
   downloadConvMedia,
+  fetchConvDeletes,
   fetchConvHistory,
   fetchConvLocal,
   fetchConvMeta,
@@ -1349,8 +1350,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         get().upsert({ ...m, media: { ...m.media!, url: URL.createObjectURL(blob) } });
       })();
     }
-    // overlays (reactions + read receipts) ride the same poll
-    void get().syncConvMeta(connectionId);
+    // tombstones: apply unsent deletions the peer may have missed while offline
+    void (async () => {
+      const delCursorKey = `rei-conv-del-cursor:${connectionId}`;
+      const delSince = readNum(delCursorKey);
+      try {
+        const { ids, cursor } = await fetchConvDeletes(connectionId, delSince);
+        for (const id of ids) get().remove(id);
+        if (cursor > delSince) localStorage.setItem(delCursorKey, String(cursor));
+      } catch { }
+    })();
   },
 
   syncConvMeta: async (connectionId) => {

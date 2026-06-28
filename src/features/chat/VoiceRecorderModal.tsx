@@ -119,7 +119,7 @@ export function VoiceRecorderModal({ open, onClose, onSend }: VoiceRecorderModal
     const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
       ? 'audio/webm;codecs=opus'
       : 'audio/mp4';
-    mimeRef.current = mime.split(';')[0];
+    mimeRef.current = mime;
     const recorder = new MediaRecorder(stream, { mimeType: mime });
     chunksRef.current = [];
     recorder.ondataavailable = (e) => {
