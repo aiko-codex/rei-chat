@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   Bell,
+  Flame,
   Hash,
   ListTodo,
   MoreVertical,
@@ -73,6 +74,8 @@ interface HomeScreenProps {
   onOpenNotifications: () => void;
   /** accounts mode only: open the People (search/requests/connections) screen */
   onOpenPeople?: () => void;
+  /** accounts mode only: open the Truth or Dare room for a connection */
+  onOpenTruthDare?: (connectionId: string, peerUserId: string) => void;
 }
 
 export function HomeScreen({
@@ -80,6 +83,7 @@ export function HomeScreen({
   onOpenSettings,
   onOpenNotifications,
   onOpenPeople,
+  onOpenTruthDare,
 }: HomeScreenProps) {
   const messages = useChatStore((s) => s.messages);
   const channels = useChatStore((s) => s.channels);
@@ -319,6 +323,40 @@ export function HomeScreen({
               </div>
             </button>
           ))}
+
+        {/* play together: a dedicated, separate Truth or Dare space per connection */}
+        {accountsMode && onOpenTruthDare && acceptedConnections.length > 0 && (
+          <>
+            <p className="px-5 pt-4 pb-1 text-xs font-medium text-muted-foreground">
+              Play together
+            </p>
+            {acceptedConnections.map((conn) => (
+              <button
+                key={`tod-${conn.connectionId}`}
+                onClick={() => {
+                  rememberConnectionPeer(conn.connectionId, {
+                    displayName: conn.account.displayName,
+                    username: conn.account.username,
+                    avatar: conn.account.avatar,
+                  });
+                  onOpenTruthDare(conn.connectionId, conn.account.userId);
+                }}
+                data-testid={`home-truth-dare-${conn.connectionId}`}
+                className="mx-4 my-1 flex cursor-pointer items-center gap-3 rounded-2xl bg-linear-to-br from-rose-500/20 via-rose-500/10 to-transparent px-4 py-3.5 text-left ring-1 ring-rose-500/20 transition-colors hover:from-rose-500/30"
+              >
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-rose-500/90 text-white [&_svg]:size-5.5">
+                  <Flame />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[17px] font-semibold">Truth or Dare</p>
+                  <p className="truncate text-[13px] text-muted-foreground">
+                    Just you &amp; {conn.account.displayName} · private 🔥
+                  </p>
+                </div>
+              </button>
+            ))}
+          </>
+        )}
 
         {/* the legacy DM (pre-accounts pairing mode only) */}
         {!accountsMode && (

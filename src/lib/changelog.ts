@@ -24,6 +24,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.13.0',
+    date: '2026-06-28',
+    title: 'New game: Truth or Dare 🔥',
+    changes: [
+      { kind: 'new', text: 'A private Truth or Dare room — find it under "Play together" on your chats list' },
+      { kind: 'new', text: 'Your partner deals you a card or writes their own truth/dare — your call to answer or do it' },
+      { kind: 'new', text: 'Set the mood with spice levels, from Sweet to Wild (both of you agree before it heats up)' },
+      { kind: 'new', text: 'Anything you send in the game — photos, videos, voice — is saved forever in a private Vault' },
+      { kind: 'improve', text: 'See when your partner is in the room with you, live — and pick up later when they\'re not' },
+    ],
+  },
+  {
     version: '0.12.3',
     date: '2026-06-28',
     title: 'Voice notes & media polish',

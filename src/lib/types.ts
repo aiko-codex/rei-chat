@@ -179,5 +179,6 @@ export type Screen =
   | 'chat-details'
   | 'call'
   | 'voice-channel'
+  | 'truth-dare'
   | 'settings'
   | 'notifications';

@@ -14,6 +14,7 @@ import { PairingScreen } from '@/features/pairing/PairingScreen';
 import { ProfileSetupScreen } from '@/features/profile/ProfileSetupScreen';
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
 import { NotificationsScreen } from '@/features/notifications/NotificationsScreen';
+import { TruthDareScreen } from '@/features/truth-dare/TruthDareScreen';
 import { Toaster } from '@/components/ui/sonner';
 import { VoiceChannelScreen } from '@/features/voice/VoiceChannelScreen';
 import {
@@ -124,6 +125,8 @@ export default function App() {
     const [paired, setPaired] = useState(isPaired());
     // a pending scroll-to-message request (from in-conversation search)
     const [jump, setJump] = useState<{ id: string; nonce: number } | null>(null);
+    // the connection + peer userId for the open Truth or Dare room
+    const [todRoom, setTodRoom] = useState<{ connectionId: string; peerUserId: string } | null>(null);
 
     const myProfile = useChatStore((s) => s.myProfile);
     const setMyProfile = useChatStore((s) => s.setMyProfile);
@@ -404,6 +407,14 @@ export default function App() {
                             onOpenPeople={
                                 accountsMode() ? () => setScreen('connections') : undefined
                             }
+                            onOpenTruthDare={
+                                accountsMode()
+                                    ? (connectionId, peerUserId) => {
+                                          setTodRoom({ connectionId, peerUserId });
+                                          setScreen('truth-dare');
+                                      }
+                                    : undefined
+                            }
                         />
                     )}
 
@@ -459,6 +470,16 @@ export default function App() {
 
                 <SlideScreen show={screen === 'voice-channel'}>
                     <VoiceChannelScreen onBack={() => setScreen('chat')} />
+                </SlideScreen>
+
+                <SlideScreen show={screen === 'truth-dare'} z='z-20'>
+                    {todRoom && (
+                        <TruthDareScreen
+                            connectionId={todRoom.connectionId}
+                            peerUserId={todRoom.peerUserId}
+                            onBack={() => setScreen('home')}
+                        />
+                    )}
                 </SlideScreen>
 
                 <SlideScreen show={screen === 'settings'}>

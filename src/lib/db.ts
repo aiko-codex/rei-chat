@@ -101,6 +101,11 @@ export async function getBlob(id: string): Promise<Blob | undefined> {
   return (await db()).get('blobs', id);
 }
 
+/** drop a stored media blob by id (e.g. clearing a Vault item) */
+export async function deleteBlob(id: string): Promise<void> {
+  await (await db()).delete('blobs', id);
+}
+
 /** all stored media blobs, keyed by message id — used to rebuild object URLs on load */
 export async function loadBlobs(): Promise<Map<string, Blob>> {
   const d = await db();
