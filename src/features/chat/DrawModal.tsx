@@ -97,11 +97,11 @@ export function DrawModal({ open, onClose, onSend }: DrawModalProps) {
                             style={{ background: c, boxShadow: c === '#ffffff' ? 'inset 0 0 0 1px #0002' : undefined }}
                         />
                     ))}
-                    {/* custom color picker — native color input, triggered by a swatch button */}
-                    <button
-                        onClick={() => customColorRef.current?.click()}
-                        aria-label="Pick a custom color"
-                        data-testid="draw-color-custom"
+                    {/* custom color picker — the real <input type=color> sits directly on
+                        top of the swatch (opacity-0, not clipped) so the click hits the
+                        native input itself; clipping tricks (sr-only) block the picker
+                        from opening in some browsers */}
+                    <div
                         className={cn(
                             'relative flex size-7 items-center justify-center overflow-hidden rounded-full ring-2 ring-offset-2 ring-offset-background transition',
                             !erasing && !COLORS.includes(color) ? 'ring-foreground' : 'ring-transparent',
@@ -112,16 +112,17 @@ export function DrawModal({ open, onClose, onSend }: DrawModalProps) {
                                 : { background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }
                         }
                     >
-                        {(erasing || COLORS.includes(color)) && <Pipette className="size-3.5 text-white drop-shadow" />}
-                    </button>
-                    <input
-                        ref={customColorRef}
-                        type="color"
-                        value={COLORS.includes(color) ? '#b03a6e' : color}
-                        onChange={(e) => setPen(e.target.value)}
-                        className="sr-only"
-                        aria-hidden
-                    />
+                        {(erasing || COLORS.includes(color)) && <Pipette className="pointer-events-none size-3.5 text-white drop-shadow" />}
+                        <input
+                            ref={customColorRef}
+                            type="color"
+                            value={COLORS.includes(color) ? '#b03a6e' : color}
+                            onChange={(e) => setPen(e.target.value)}
+                            aria-label="Pick a custom color"
+                            data-testid="draw-color-custom"
+                            className="absolute inset-0 size-full cursor-pointer opacity-0"
+                        />
+                    </div>
                     <div className="ml-auto flex items-center gap-1">
                         <Button variant={erasing ? 'secondary' : 'ghost'} size="icon" onClick={toggleErase} aria-label="Eraser">
                             <Eraser />

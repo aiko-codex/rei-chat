@@ -66,34 +66,56 @@ export function freshState(firstDrawer: string, a: string, b: string): DGState {
   };
 }
 
-/** Pictionary-friendly words — common enough to draw, distinct enough to guess. */
+/** Pictionary-friendly words — common enough to draw, distinct enough to guess.
+ *  Single words only (no spaces) so they read cleanly as one guess. */
 export const WORDS: string[] = [
   // Animals
   'cat', 'dog', 'fish', 'bird', 'snake', 'lion', 'tiger', 'bear', 'elephant', 'monkey',
   'penguin', 'giraffe', 'rabbit', 'frog', 'shark', 'whale', 'horse', 'cow', 'pig', 'duck',
   'owl', 'bee', 'butterfly', 'spider', 'crab', 'turtle', 'parrot', 'wolf', 'fox', 'deer',
+  'kangaroo', 'koala', 'zebra', 'hippo', 'rhino', 'camel', 'squirrel', 'hedgehog', 'bat',
+  'octopus', 'dolphin', 'seahorse', 'jellyfish', 'lobster', 'snail', 'ladybug', 'ant',
+  'chicken', 'rooster', 'goat', 'sheep', 'donkey', 'peacock', 'flamingo', 'sloth', 'otter',
+  'raccoon', 'skunk', 'moose', 'chameleon', 'lizard', 'scorpion', 'mosquito', 'worm', 'seal',
   // Food & drink
   'pizza', 'burger', 'taco', 'sushi', 'cake', 'apple', 'banana', 'strawberry', 'watermelon',
-  'ice cream', 'coffee', 'donut', 'sandwich', 'pasta', 'popcorn', 'cookie', 'grapes', 'lemon',
-  'carrot', 'mushroom', 'egg', 'bread', 'cupcake', 'chocolate',
+  'coffee', 'donut', 'sandwich', 'pasta', 'popcorn', 'cookie', 'grapes', 'lemon',
+  'carrot', 'mushroom', 'egg', 'bread', 'cupcake', 'chocolate', 'pineapple', 'cherry',
+  'pretzel', 'waffle', 'pancake', 'noodles', 'burrito', 'avocado', 'broccoli', 'corn',
+  'peanut', 'honey', 'jam', 'cheese', 'sausage', 'shrimp', 'lollipop', 'muffin', 'pie',
+  'milkshake', 'lemonade', 'soup', 'salad', 'onion', 'garlic', 'peach', 'coconut', 'mango',
   // Objects / home
   'chair', 'table', 'lamp', 'bed', 'door', 'window', 'clock', 'mirror', 'umbrella',
   'backpack', 'key', 'phone', 'camera', 'book', 'pencil', 'glasses', 'hat', 'shoes',
   'sock', 'glove', 'guitar', 'drum', 'piano', 'balloon', 'candle', 'scissors', 'brush',
-  'ladder', 'bucket', 'hammer', 'magnet', 'envelope', 'crown',
+  'ladder', 'bucket', 'hammer', 'magnet', 'envelope', 'crown', 'ring', 'necklace',
+  'sofa', 'pillow', 'blanket', 'broom', 'vacuum', 'toaster', 'kettle', 'fridge', 'oven',
+  'fork', 'spoon', 'knife', 'plate', 'bowl', 'cup', 'bottle', 'basket', 'suitcase',
+  'wallet', 'headphones', 'keyboard', 'mouse', 'printer', 'calculator', 'battery',
+  'flashlight', 'binoculars', 'trumpet', 'violin', 'saxophone', 'harp',
   // Nature
   'sun', 'moon', 'star', 'cloud', 'rainbow', 'tree', 'flower', 'leaf', 'mountain',
   'river', 'ocean', 'island', 'volcano', 'cactus', 'snowflake', 'lightning', 'wave',
+  'desert', 'forest', 'waterfall', 'cave', 'iceberg', 'meadow', 'jungle', 'canyon',
+  'sunflower', 'tulip', 'rose', 'seaweed', 'coral', 'pebble', 'thunder',
   // Vehicles & places
   'car', 'bus', 'train', 'plane', 'boat', 'rocket', 'bicycle', 'helicopter',
   'bridge', 'house', 'castle', 'tent', 'lighthouse', 'windmill',
+  'submarine', 'tractor', 'motorcycle', 'skateboard', 'canoe', 'sailboat', 'ambulance',
+  'firetruck', 'taxi', 'scooter', 'airport', 'stadium', 'library', 'church', 'school',
+  'hospital', 'farm', 'garage', 'elevator', 'escalator', 'tunnel', 'skyscraper', 'igloo',
   // Actions (draw the concept)
   'sleeping', 'running', 'jumping', 'swimming', 'flying', 'dancing', 'singing', 'cooking',
   'reading', 'painting', 'fishing', 'climbing', 'skating', 'surfing', 'hugging',
+  'laughing', 'crying', 'sneezing', 'yawning', 'stretching', 'juggling', 'whistling',
+  'typing', 'driving', 'diving', 'boxing', 'wrestling', 'skiing', 'camping', 'knitting',
   // Misc fun
   'ghost', 'alien', 'robot', 'dragon', 'superhero', 'treasure', 'bomb', 'trophy',
   'heart', 'flag', 'map', 'compass', 'telescope', 'magician', 'witch', 'snowman',
-  'fireworks', 'diamond', 'rocket ship', 'tornado',
+  'fireworks', 'diamond', 'tornado', 'vampire', 'zombie', 'mermaid', 'unicorn',
+  'wizard', 'pirate', 'ninja', 'knight', 'astronaut', 'clown', 'genie', 'mummy',
+  'skeleton', 'angel', 'dinosaur', 'pyramid', 'statue', 'puzzle', 'kite',
+  'anchor', 'ticket', 'mask', 'medal', 'shield', 'sword', 'wand', 'lantern', 'gift',
 ];
 
 export function pickWord(exclude?: string): string {

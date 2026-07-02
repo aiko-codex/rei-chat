@@ -24,6 +24,32 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.14.4',
+    date: '2026-07-02',
+    title: 'Way more words to draw',
+    changes: [
+      { kind: 'improve', text: 'Draw & Guess now picks from 300+ words instead of a small set' },
+      { kind: 'improve', text: 'Removed multi-word entries so every word is a single, clean guess' },
+    ],
+  },
+  {
+    version: '0.14.3',
+    date: '2026-07-02',
+    title: 'Fix: word refresh in Draw & Guess',
+    changes: [
+      { kind: 'new', text: 'A proper "get a different word" button next to your secret word in Draw & Guess' },
+      { kind: 'fix', text: 'The header icon that looked like a refresh button now correctly opens the menu instead' },
+    ],
+  },
+  {
+    version: '0.14.2',
+    date: '2026-07-02',
+    title: 'Fix: color picker wasn\'t opening',
+    changes: [
+      { kind: 'fix', text: 'Tapping the custom color swatch now actually opens the color picker' },
+    ],
+  },
+  {
     version: '0.14.1',
     date: '2026-07-02',
     title: 'Proper color picker for drawing',

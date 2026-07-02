@@ -16,10 +16,12 @@ import {
   ArrowLeft,
   Check,
   Eraser,
+  MoreVertical,
   Palette,
   Pencil,
   Pipette,
   Redo2,
+  RefreshCw,
   RotateCcw,
   SkipForward,
   Undo2,
@@ -69,6 +71,7 @@ export function DrawGuessScreen({ connectionId, peerUserId, onBack }: Props) {
   const myUserId = useDrawGuessStore((s) => s.myUserId);
   const peerLive = useDrawGuessStore((s) => s.peerLive);
   const startGame = useDrawGuessStore((s) => s.startGame);
+  const rerollWord = useDrawGuessStore((s) => s.rerollWord);
   const submitDrawing = useDrawGuessStore((s) => s.submitDrawing);
   const submitGuess = useDrawGuessStore((s) => s.submitGuess);
   const nextTurn = useDrawGuessStore((s) => s.nextTurn);
@@ -187,10 +190,18 @@ export function DrawGuessScreen({ connectionId, peerUserId, onBack }: Props) {
   } else if (state.phase === 'drawing') {
     body = iAmDrawer ? (
       <div className="flex flex-1 flex-col gap-3 px-4 py-3">
-        <div className="rounded-xl bg-sky-500/10 px-4 py-2.5 text-center">
+        <div className="relative rounded-xl bg-sky-500/10 px-4 py-2.5 text-center">
           <p className="text-[11px] uppercase tracking-widest text-sky-300/70">Your secret word</p>
           <p className="text-2xl font-bold text-sky-300">{state.word}</p>
           <p className="text-[11px] text-white/40">Don't say it — draw it!</p>
+          <button
+            onClick={rerollWord}
+            aria-label="Get a different word"
+            data-testid="dg-reroll-word"
+            className="absolute right-2.5 top-2.5 flex size-7 cursor-pointer items-center justify-center rounded-full text-sky-300/70 hover:bg-white/10 hover:text-sky-300"
+          >
+            <RefreshCw className="size-3.5" />
+          </button>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-white/10 bg-white">
           <ReactSketchCanvas
@@ -216,11 +227,11 @@ export function DrawGuessScreen({ connectionId, peerUserId, onBack }: Props) {
               style={{ background: c, boxShadow: c === '#ffffff' ? 'inset 0 0 0 1px #ffffff33' : undefined }}
             />
           ))}
-          {/* custom color picker — native color input, triggered by a swatch button */}
-          <button
-            onClick={() => customColorRef.current?.click()}
-            aria-label="Pick a custom color"
-            data-testid="dg-color-custom"
+          {/* custom color picker — the real <input type=color> sits directly on
+              top of the swatch (opacity-0, not clipped) so the click hits the
+              native input itself; clipping tricks (sr-only) block the picker
+              from opening in some browsers */}
+          <div
             className={cn(
               'relative flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full ring-2 ring-offset-2 ring-offset-neutral-950 transition',
               !erasing && !COLORS.includes(color) ? 'ring-white' : 'ring-transparent',
@@ -231,16 +242,17 @@ export function DrawGuessScreen({ connectionId, peerUserId, onBack }: Props) {
                 : { background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }
             }
           >
-            {(erasing || COLORS.includes(color)) && <Pipette className="size-3.5 text-white drop-shadow" />}
-          </button>
-          <input
-            ref={customColorRef}
-            type="color"
-            value={COLORS.includes(color) ? '#3b82f6' : color}
-            onChange={(e) => setPen(e.target.value)}
-            className="sr-only"
-            aria-hidden
-          />
+            {(erasing || COLORS.includes(color)) && <Pipette className="pointer-events-none size-3.5 text-white drop-shadow" />}
+            <input
+              ref={customColorRef}
+              type="color"
+              value={COLORS.includes(color) ? '#3b82f6' : color}
+              onChange={(e) => setPen(e.target.value)}
+              aria-label="Pick a custom color"
+              data-testid="dg-color-custom"
+              className="absolute inset-0 size-full cursor-pointer opacity-0"
+            />
+          </div>
           <div className="ml-auto flex items-center gap-1">
             <Button variant={erasing ? 'secondary' : 'ghost'} size="icon" onClick={toggleErase} aria-label="Eraser" className="text-white hover:text-white">
               <Eraser />
@@ -400,7 +412,7 @@ export function DrawGuessScreen({ connectionId, peerUserId, onBack }: Props) {
           </div>
         )}
         <button onClick={() => setShowMenu(true)} aria-label="Menu" className="cursor-pointer rounded-full p-2 hover:bg-white/10">
-          <RotateCcw className="size-5" />
+          <MoreVertical className="size-5" />
         </button>
       </header>
 

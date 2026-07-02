@@ -59,6 +59,8 @@ interface DrawGuessStore {
   leave: () => void;
 
   startGame: () => void;
+  /** re-roll the secret word before the drawing is sent (drawer only) */
+  rerollWord: () => void;
   submitDrawing: (dataUrl: string) => void;
   submitGuess: (text: string) => void;
   nextTurn: () => void;
@@ -177,6 +179,12 @@ export const useDrawGuessStore = create<DrawGuessStore>((set, get) => {
         guesses: [],
         guessesLeft: MAX_GUESSES,
       }));
+    },
+
+    rerollWord: () => {
+      const s = get().state;
+      if (!s || s.phase !== 'drawing' || s.drawingUrl) return;
+      mutate((st) => ({ ...st, word: pickWord(st.word) }));
     },
 
     submitDrawing: (dataUrl) => {
