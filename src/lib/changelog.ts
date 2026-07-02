@@ -24,6 +24,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.16.0',
+    date: '2026-07-02',
+    title: 'New game: Bingo 🎯',
+    changes: [
+      { kind: 'new', text: 'Bingo joins "Play together" — each of you gets a shuffled 1-25 board' },
+      { kind: 'new', text: 'Take turns calling numbers; first to complete 5 lines wins' },
+      { kind: 'new', text: 'A 15-second turn timer keeps the game moving — miss it and a number is picked for you' },
+    ],
+  },
+  {
     version: '0.15.1',
     date: '2026-07-02',
     title: 'Truth or Dare: way more prompts',

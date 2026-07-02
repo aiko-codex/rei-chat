@@ -16,6 +16,7 @@ import { SettingsScreen } from '@/features/settings/SettingsScreen';
 import { NotificationsScreen } from '@/features/notifications/NotificationsScreen';
 import { TruthDareScreen } from '@/features/truth-dare/TruthDareScreen';
 import { DrawGuessScreen } from '@/features/draw-guess/DrawGuessScreen';
+import { BingoScreen } from '@/features/bingo/BingoScreen';
 import { Toaster } from '@/components/ui/sonner';
 import { VoiceChannelScreen } from '@/features/voice/VoiceChannelScreen';
 import {
@@ -130,6 +131,8 @@ export default function App() {
     const [todRoom, setTodRoom] = useState<{ connectionId: string; peerUserId: string } | null>(null);
     // the connection + peer userId for the open Draw & Guess room
     const [dgRoom, setDgRoom] = useState<{ connectionId: string; peerUserId: string } | null>(null);
+    // the connection + peer userId for the open Bingo room
+    const [bingoRoom, setBingoRoom] = useState<{ connectionId: string; peerUserId: string } | null>(null);
 
     const myProfile = useChatStore((s) => s.myProfile);
     const setMyProfile = useChatStore((s) => s.setMyProfile);
@@ -426,6 +429,14 @@ export default function App() {
                                       }
                                     : undefined
                             }
+                            onOpenBingo={
+                                accountsMode()
+                                    ? (connectionId, peerUserId) => {
+                                          setBingoRoom({ connectionId, peerUserId });
+                                          setScreen('bingo');
+                                      }
+                                    : undefined
+                            }
                         />
                     )}
 
@@ -498,6 +509,16 @@ export default function App() {
                         <DrawGuessScreen
                             connectionId={dgRoom.connectionId}
                             peerUserId={dgRoom.peerUserId}
+                            onBack={() => setScreen('home')}
+                        />
+                    )}
+                </SlideScreen>
+
+                <SlideScreen show={screen === 'bingo'} z='z-20'>
+                    {bingoRoom && (
+                        <BingoScreen
+                            connectionId={bingoRoom.connectionId}
+                            peerUserId={bingoRoom.peerUserId}
                             onBack={() => setScreen('home')}
                         />
                     )}

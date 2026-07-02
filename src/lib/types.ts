@@ -170,5 +170,6 @@ export type Screen =
   | 'voice-channel'
   | 'truth-dare'
   | 'draw-guess'
+  | 'bingo'
   | 'settings'
   | 'notifications';

@@ -4,6 +4,7 @@ import {
   Bell,
   Flame,
   Gamepad2,
+  Grid3x3,
   Hash,
   ListTodo,
   MoreVertical,
@@ -79,6 +80,8 @@ interface HomeScreenProps {
   onOpenTruthDare?: (connectionId: string, peerUserId: string) => void;
   /** accounts mode only: open the Draw & Guess room for a connection */
   onOpenDrawGuess?: (connectionId: string, peerUserId: string) => void;
+  /** accounts mode only: open the Bingo room for a connection */
+  onOpenBingo?: (connectionId: string, peerUserId: string) => void;
 }
 
 export function HomeScreen({
@@ -88,6 +91,7 @@ export function HomeScreen({
   onOpenPeople,
   onOpenTruthDare,
   onOpenDrawGuess,
+  onOpenBingo,
 }: HomeScreenProps) {
   const messages = useChatStore((s) => s.messages);
   const channels = useChatStore((s) => s.channels);
@@ -153,6 +157,14 @@ export function HomeScreen({
       icon: <Pencil />,
       color: 'bg-sky-500/90',
       open: onOpenDrawGuess,
+    },
+    onOpenBingo && {
+      id: 'bingo',
+      label: 'Bingo',
+      blurb: 'Shuffled boards, first to 5 lines wins 🎯',
+      icon: <Grid3x3 />,
+      color: 'bg-emerald-500/90',
+      open: onOpenBingo,
     },
   ].filter((g): g is Exclude<typeof g, false | undefined> => Boolean(g));
 
