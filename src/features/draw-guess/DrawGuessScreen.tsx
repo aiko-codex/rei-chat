@@ -18,6 +18,7 @@ import {
   Eraser,
   Palette,
   Pencil,
+  Pipette,
   Redo2,
   RotateCcw,
   SkipForward,
@@ -77,6 +78,7 @@ export function DrawGuessScreen({ connectionId, peerUserId, onBack }: Props) {
   const peerName = useChatStore((s) => s.connectionPeers[connectionId]?.displayName) || 'Her';
 
   const canvasRef = useRef<ReactSketchCanvasRef>(null);
+  const customColorRef = useRef<HTMLInputElement>(null);
   const [color, setColor] = useState(COLORS[1]);
   const [erasing, setErasing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -214,6 +216,31 @@ export function DrawGuessScreen({ connectionId, peerUserId, onBack }: Props) {
               style={{ background: c, boxShadow: c === '#ffffff' ? 'inset 0 0 0 1px #ffffff33' : undefined }}
             />
           ))}
+          {/* custom color picker — native color input, triggered by a swatch button */}
+          <button
+            onClick={() => customColorRef.current?.click()}
+            aria-label="Pick a custom color"
+            data-testid="dg-color-custom"
+            className={cn(
+              'relative flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full ring-2 ring-offset-2 ring-offset-neutral-950 transition',
+              !erasing && !COLORS.includes(color) ? 'ring-white' : 'ring-transparent',
+            )}
+            style={
+              !erasing && !COLORS.includes(color)
+                ? { background: color }
+                : { background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }
+            }
+          >
+            {(erasing || COLORS.includes(color)) && <Pipette className="size-3.5 text-white drop-shadow" />}
+          </button>
+          <input
+            ref={customColorRef}
+            type="color"
+            value={COLORS.includes(color) ? '#3b82f6' : color}
+            onChange={(e) => setPen(e.target.value)}
+            className="sr-only"
+            aria-hidden
+          />
           <div className="ml-auto flex items-center gap-1">
             <Button variant={erasing ? 'secondary' : 'ghost'} size="icon" onClick={toggleErase} aria-label="Eraser" className="text-white hover:text-white">
               <Eraser />

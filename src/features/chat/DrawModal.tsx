@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { ReactSketchCanvas, type ReactSketchCanvasRef } from 'react-sketch-canvas';
-import { Eraser, Redo2, RotateCcw, Undo2 } from 'lucide-react';
+import { Eraser, Pipette, Redo2, RotateCcw, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
     Dialog,
@@ -22,6 +22,7 @@ interface DrawModalProps {
 
 export function DrawModal({ open, onClose, onSend }: DrawModalProps) {
     const canvasRef = useRef<ReactSketchCanvasRef>(null);
+    const customColorRef = useRef<HTMLInputElement>(null);
     const [color, setColor] = useState(COLORS[1]);
     const [erasing, setErasing] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -96,6 +97,31 @@ export function DrawModal({ open, onClose, onSend }: DrawModalProps) {
                             style={{ background: c, boxShadow: c === '#ffffff' ? 'inset 0 0 0 1px #0002' : undefined }}
                         />
                     ))}
+                    {/* custom color picker — native color input, triggered by a swatch button */}
+                    <button
+                        onClick={() => customColorRef.current?.click()}
+                        aria-label="Pick a custom color"
+                        data-testid="draw-color-custom"
+                        className={cn(
+                            'relative flex size-7 items-center justify-center overflow-hidden rounded-full ring-2 ring-offset-2 ring-offset-background transition',
+                            !erasing && !COLORS.includes(color) ? 'ring-foreground' : 'ring-transparent',
+                        )}
+                        style={
+                            !erasing && !COLORS.includes(color)
+                                ? { background: color }
+                                : { background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }
+                        }
+                    >
+                        {(erasing || COLORS.includes(color)) && <Pipette className="size-3.5 text-white drop-shadow" />}
+                    </button>
+                    <input
+                        ref={customColorRef}
+                        type="color"
+                        value={COLORS.includes(color) ? '#b03a6e' : color}
+                        onChange={(e) => setPen(e.target.value)}
+                        className="sr-only"
+                        aria-hidden
+                    />
                     <div className="ml-auto flex items-center gap-1">
                         <Button variant={erasing ? 'secondary' : 'ghost'} size="icon" onClick={toggleErase} aria-label="Eraser">
                             <Eraser />

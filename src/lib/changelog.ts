@@ -24,6 +24,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.14.1',
+    date: '2026-07-02',
+    title: 'Proper color picker for drawing',
+    changes: [
+      { kind: 'new', text: 'Draw & Guess and the regular Draw tool now have a full color picker, not just presets' },
+      { kind: 'improve', text: 'Default color swatches are still there for quick picks' },
+    ],
+  },
+  {
     version: '0.14.0',
     date: '2026-07-02',
     title: 'Draw & Guess moved to its own space 🎨',
