@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import {
   Bell,
   Flame,
+  Gamepad2,
   Hash,
   ListTodo,
   MoreVertical,
@@ -109,6 +110,14 @@ export function HomeScreen({
   const setMood = useChatStore((s) => s.setMood);
   const [moodPickerOpen, setMoodPickerOpen] = useState(false);
   const shareChannelWithConnection = useChatStore((s) => s.shareChannelWithConnection);
+  // "Play together": tapping a person's card opens a game-picker sheet rather
+  // than listing one row per game per person (which doesn't scale as games
+  // are added — see the games registry below)
+  const [gamesSheetConn, setGamesSheetConn] = useState<{
+    connectionId: string;
+    peerUserId: string;
+    displayName: string;
+  } | null>(null);
 
   // accounts mode: the chats list is driven by accepted connections (not the
   // legacy mock DM). `onOpenPeople` is only passed in accounts mode.
@@ -125,6 +134,27 @@ export function HomeScreen({
   const incomingRequests = connections.filter((c) => c.status === 'pending' && c.incoming).length;
   const notifCount =
     invites.length + acceptances.length + incomingRequests + connectionAccepts.length;
+
+  // registry of dedicated, full-screen couple games — add new games here (one
+  // entry) rather than adding new rows to the "Play together" list per game
+  const games = [
+    onOpenTruthDare && {
+      id: 'truth-dare',
+      label: 'Truth or Dare',
+      blurb: 'Dares, truths, spice levels · private 🔥',
+      icon: <Flame />,
+      color: 'bg-rose-500/90',
+      open: onOpenTruthDare,
+    },
+    onOpenDrawGuess && {
+      id: 'draw-guess',
+      label: 'Draw & Guess',
+      blurb: 'Sketch a word, they guess live 🎨',
+      icon: <Pencil />,
+      color: 'bg-sky-500/90',
+      open: onOpenDrawGuess,
+    },
+  ].filter((g): g is Exclude<typeof g, false | undefined> => Boolean(g));
 
   // deleting a channel wipes its notes too — give a 5s undo window
   const deleteChannel = (channelId: string) => {
@@ -327,63 +357,48 @@ export function HomeScreen({
             </button>
           ))}
 
-        {/* play together: a dedicated, separate Truth or Dare space per connection */}
-        {accountsMode && onOpenTruthDare && acceptedConnections.length > 0 && (
+        {/* play together: one card per person → tap opens a game picker sheet.
+            New games register in the GAMES list below, not as new rows here. */}
+        {accountsMode && games.length > 0 && acceptedConnections.length > 0 && (
           <>
             <p className="px-5 pt-4 pb-1 text-xs font-medium text-muted-foreground">
               Play together
             </p>
             {acceptedConnections.map((conn) => (
               <button
-                key={`tod-${conn.connectionId}`}
+                key={`play-${conn.connectionId}`}
                 onClick={() => {
                   rememberConnectionPeer(conn.connectionId, {
                     displayName: conn.account.displayName,
                     username: conn.account.username,
                     avatar: conn.account.avatar,
                   });
-                  onOpenTruthDare(conn.connectionId, conn.account.userId);
+                  if (games.length === 1) {
+                    games[0].open(conn.connectionId, conn.account.userId);
+                  } else {
+                    setGamesSheetConn({
+                      connectionId: conn.connectionId,
+                      peerUserId: conn.account.userId,
+                      displayName: conn.account.displayName,
+                    });
+                  }
                 }}
-                data-testid={`home-truth-dare-${conn.connectionId}`}
-                className="mx-4 my-1 flex cursor-pointer items-center gap-3 rounded-2xl bg-linear-to-br from-rose-500/20 via-rose-500/10 to-transparent px-4 py-3.5 text-left ring-1 ring-rose-500/20 transition-colors hover:from-rose-500/30"
+                data-testid={`home-play-${conn.connectionId}`}
+                className="mx-4 my-1 flex cursor-pointer items-center gap-3 rounded-2xl bg-linear-to-br from-violet-500/20 via-fuchsia-500/10 to-transparent px-4 py-3.5 text-left ring-1 ring-violet-500/20 transition-colors hover:from-violet-500/30"
               >
-                <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-rose-500/90 text-white [&_svg]:size-5.5">
-                  <Flame />
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-violet-500/90 text-white [&_svg]:size-5.5">
+                  <Gamepad2 />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[17px] font-semibold">Truth or Dare</p>
+                  <p className="truncate text-[17px] font-semibold">
+                    Play with {conn.account.displayName}
+                  </p>
                   <p className="truncate text-[13px] text-muted-foreground">
-                    Just you &amp; {conn.account.displayName} · private 🔥
+                    {games.map((g) => g.label).join(' · ')} · private
                   </p>
                 </div>
               </button>
             ))}
-            {onOpenDrawGuess &&
-              acceptedConnections.map((conn) => (
-                <button
-                  key={`dg-${conn.connectionId}`}
-                  onClick={() => {
-                    rememberConnectionPeer(conn.connectionId, {
-                      displayName: conn.account.displayName,
-                      username: conn.account.username,
-                      avatar: conn.account.avatar,
-                    });
-                    onOpenDrawGuess(conn.connectionId, conn.account.userId);
-                  }}
-                  data-testid={`home-draw-guess-${conn.connectionId}`}
-                  className="mx-4 my-1 flex cursor-pointer items-center gap-3 rounded-2xl bg-linear-to-br from-sky-500/20 via-sky-500/10 to-transparent px-4 py-3.5 text-left ring-1 ring-sky-500/20 transition-colors hover:from-sky-500/30"
-                >
-                  <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-sky-500/90 text-white [&_svg]:size-5.5">
-                    <Pencil />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[17px] font-semibold">Draw &amp; Guess</p>
-                    <p className="truncate text-[13px] text-muted-foreground">
-                      Sketch a word for {conn.account.displayName} to guess 🎨
-                    </p>
-                  </div>
-                </button>
-              ))}
           </>
         )}
 
@@ -692,6 +707,37 @@ export function HomeScreen({
           setMood(accountsMode ? acceptedConnections[0]?.connectionId ?? DM_CHANNEL_ID : DM_CHANNEL_ID, mood)
         }
       />
+
+      {/* game picker: which private space to open with this person */}
+      <Drawer open={gamesSheetConn !== null} onOpenChange={(open) => !open && setGamesSheetConn(null)}>
+        <DrawerContent data-testid="games-picker-sheet">
+          <DrawerHeader>
+            <DrawerTitle>Play with {gamesSheetConn?.displayName}</DrawerTitle>
+          </DrawerHeader>
+          <div className="flex flex-col gap-2 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            {games.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => {
+                  if (!gamesSheetConn) return;
+                  g.open(gamesSheetConn.connectionId, gamesSheetConn.peerUserId);
+                  setGamesSheetConn(null);
+                }}
+                data-testid={`games-picker-${g.id}`}
+                className="flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-muted"
+              >
+                <span className={`flex size-10 shrink-0 items-center justify-center rounded-full text-white [&_svg]:size-5 ${g.color}`}>
+                  {g.icon}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-semibold">{g.label}</p>
+                  <p className="truncate text-[13px] text-muted-foreground">{g.blurb}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }

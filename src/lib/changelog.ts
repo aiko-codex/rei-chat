@@ -24,6 +24,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.15.0',
+    date: '2026-07-02',
+    title: '"Play together" cleaned up',
+    changes: [
+      { kind: 'improve', text: 'One "Play with ___" card per person now, instead of a separate row for every game' },
+      { kind: 'improve', text: 'Tap it to pick which game to open — scales cleanly as more games get added' },
+    ],
+  },
+  {
     version: '0.14.4',
     date: '2026-07-02',
     title: 'Way more words to draw',
