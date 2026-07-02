@@ -87,8 +87,6 @@ interface MessageListProps {
   onSwipeReply?: (message: Message) => void;
   /** stop an in-progress live location share (sender only) */
   onStopLiveLocation?: (message: Message) => void;
-  /** submit a guess for an active draw-and-guess game (guesser only) */
-  onGuess?: (msgId: string, guess: string) => void;
   /** fired when the user is genuinely viewing the latest message (at the bottom) */
   onViewedBottom?: () => void;
   /** shown centered when the channel has no messages yet */
@@ -111,7 +109,6 @@ export function MessageList({
   onDoubleTapReact,
   onSwipeReply,
   onStopLiveLocation,
-  onGuess,
   onViewedBottom,
   emptyState,
   backgroundStyle,
@@ -346,7 +343,6 @@ export function MessageList({
                 onDoubleTapReact={onDoubleTapReact}
                 onSwipeReply={onSwipeReply}
                 onStopLiveLocation={onStopLiveLocation}
-                onGuess={onGuess}
                 animateIn={msg.sentAt > mountedAt.current}
               />
             </div>

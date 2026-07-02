@@ -76,6 +76,8 @@ interface HomeScreenProps {
   onOpenPeople?: () => void;
   /** accounts mode only: open the Truth or Dare room for a connection */
   onOpenTruthDare?: (connectionId: string, peerUserId: string) => void;
+  /** accounts mode only: open the Draw & Guess room for a connection */
+  onOpenDrawGuess?: (connectionId: string, peerUserId: string) => void;
 }
 
 export function HomeScreen({
@@ -84,6 +86,7 @@ export function HomeScreen({
   onOpenNotifications,
   onOpenPeople,
   onOpenTruthDare,
+  onOpenDrawGuess,
 }: HomeScreenProps) {
   const messages = useChatStore((s) => s.messages);
   const channels = useChatStore((s) => s.channels);
@@ -355,6 +358,32 @@ export function HomeScreen({
                 </div>
               </button>
             ))}
+            {onOpenDrawGuess &&
+              acceptedConnections.map((conn) => (
+                <button
+                  key={`dg-${conn.connectionId}`}
+                  onClick={() => {
+                    rememberConnectionPeer(conn.connectionId, {
+                      displayName: conn.account.displayName,
+                      username: conn.account.username,
+                      avatar: conn.account.avatar,
+                    });
+                    onOpenDrawGuess(conn.connectionId, conn.account.userId);
+                  }}
+                  data-testid={`home-draw-guess-${conn.connectionId}`}
+                  className="mx-4 my-1 flex cursor-pointer items-center gap-3 rounded-2xl bg-linear-to-br from-sky-500/20 via-sky-500/10 to-transparent px-4 py-3.5 text-left ring-1 ring-sky-500/20 transition-colors hover:from-sky-500/30"
+                >
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-sky-500/90 text-white [&_svg]:size-5.5">
+                    <Pencil />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[17px] font-semibold">Draw &amp; Guess</p>
+                    <p className="truncate text-[13px] text-muted-foreground">
+                      Sketch a word for {conn.account.displayName} to guess 🎨
+                    </p>
+                  </div>
+                </button>
+              ))}
           </>
         )}
 

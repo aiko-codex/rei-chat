@@ -24,6 +24,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.14.0',
+    date: '2026-07-02',
+    title: 'Draw & Guess moved to its own space 🎨',
+    changes: [
+      { kind: 'new', text: 'Draw & Guess is now a full-screen game — find it under "Play together" on your chats list' },
+      { kind: 'new', text: 'The drawer now watches every guess land live, right or wrong, instead of waiting in the dark' },
+      { kind: 'new', text: 'Round history, a running score, and a "play again" recap when you\'re done' },
+      { kind: 'improve', text: 'Removed the old in-chat "Draw a word" game — the new space replaces it entirely' },
+    ],
+  },
+  {
     version: '0.13.0',
     date: '2026-06-28',
     title: 'New game: Truth or Dare 🔥',

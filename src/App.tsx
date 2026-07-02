@@ -15,6 +15,7 @@ import { ProfileSetupScreen } from '@/features/profile/ProfileSetupScreen';
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
 import { NotificationsScreen } from '@/features/notifications/NotificationsScreen';
 import { TruthDareScreen } from '@/features/truth-dare/TruthDareScreen';
+import { DrawGuessScreen } from '@/features/draw-guess/DrawGuessScreen';
 import { Toaster } from '@/components/ui/sonner';
 import { VoiceChannelScreen } from '@/features/voice/VoiceChannelScreen';
 import {
@@ -127,6 +128,8 @@ export default function App() {
     const [jump, setJump] = useState<{ id: string; nonce: number } | null>(null);
     // the connection + peer userId for the open Truth or Dare room
     const [todRoom, setTodRoom] = useState<{ connectionId: string; peerUserId: string } | null>(null);
+    // the connection + peer userId for the open Draw & Guess room
+    const [dgRoom, setDgRoom] = useState<{ connectionId: string; peerUserId: string } | null>(null);
 
     const myProfile = useChatStore((s) => s.myProfile);
     const setMyProfile = useChatStore((s) => s.setMyProfile);
@@ -415,6 +418,14 @@ export default function App() {
                                       }
                                     : undefined
                             }
+                            onOpenDrawGuess={
+                                accountsMode()
+                                    ? (connectionId, peerUserId) => {
+                                          setDgRoom({ connectionId, peerUserId });
+                                          setScreen('draw-guess');
+                                      }
+                                    : undefined
+                            }
                         />
                     )}
 
@@ -477,6 +488,16 @@ export default function App() {
                         <TruthDareScreen
                             connectionId={todRoom.connectionId}
                             peerUserId={todRoom.peerUserId}
+                            onBack={() => setScreen('home')}
+                        />
+                    )}
+                </SlideScreen>
+
+                <SlideScreen show={screen === 'draw-guess'} z='z-20'>
+                    {dgRoom && (
+                        <DrawGuessScreen
+                            connectionId={dgRoom.connectionId}
+                            peerUserId={dgRoom.peerUserId}
                             onBack={() => setScreen('home')}
                         />
                     )}

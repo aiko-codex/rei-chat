@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform } from 'motion/react';
-import { Check, CheckCheck, CircleAlert, FileIcon, ImageIcon, MapPin, Mic, Pause, Play, Reply, SendHorizontal, Video } from 'lucide-react';
+import { Check, CheckCheck, CircleAlert, FileIcon, ImageIcon, MapPin, Mic, Pause, Play, Reply, Video } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useChatStore } from '@/store/chat-store';
@@ -406,108 +404,6 @@ function QuoteIcon({ kind }: { kind?: MediaAttachment['kind'] }) {
 
 const LONG_PRESS_MS = 450;
 
-// ── Draw-a-word game card ────────────────────────────────────────────────────
-// Shown below a drawing message that has a game attached.
-// The guesser sees a text input; the drawer sees a "waiting" notice.
-function GameCard({
-  message,
-  isMine,
-  onGuess,
-}: {
-  message: Message;
-  isMine: boolean;
-  onGuess?: (msgId: string, guess: string) => void;
-}) {
-  const gamePoints = useChatStore((s) => s.gamePoints);
-  const [guess, setGuess] = useState('');
-  const game = message.game;
-  if (!game) return null;
-
-  const isDrawer = isMine; // the drawer is the one who sent the message
-  const hearts = Array.from({ length: 3 }, (_, i) => i < game.guessesLeft ? '❤️' : '🖤');
-
-  const submit = () => {
-    if (!guess.trim() || game.status !== 'active') return;
-    onGuess?.(message.id, guess.trim());
-    setGuess('');
-  };
-
-  return (
-    <div
-      className={cn(
-        'mt-1 w-full max-w-[260px] rounded-2xl border bg-background px-3 py-2.5 text-foreground shadow-sm',
-        isMine ? 'self-end' : 'self-start',
-      )}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {game.status === 'active' ? (
-        <>
-          <p className="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-            {isDrawer ? '🎨 Waiting for a guess…' : '🎨 Guess the word!'}
-          </p>
-          {isDrawer ? (
-            <p className="text-center text-xs text-muted-foreground">
-              Secret word: <span className="font-bold text-primary">{game.word}</span>
-            </p>
-          ) : (
-            <>
-              <div className="mb-1.5 flex items-center gap-1 px-0.5 py-1 text-sm">
-                {hearts.map((h, i) => (
-                  <span key={i}>{h}</span>
-                ))}
-                <span className="ml-auto text-[11px] text-muted-foreground">
-                  {game.guessesLeft}/3
-                </span>
-              </div>
-              <div className="flex gap-1.5">
-                <Input
-                  value={guess}
-                  onChange={(e) => setGuess(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && submit()}
-                  placeholder="Type your guess…"
-                  className="h-8 flex-1 rounded-full px-3 text-sm"
-                />
-                <Button
-                  size="icon"
-                  className="size-8 shrink-0 rounded-full"
-                  onClick={submit}
-                  disabled={!guess.trim()}
-                >
-                  <SendHorizontal className="size-3.5" />
-                </Button>
-              </div>
-            </>
-          )}
-        </>
-      ) : (
-        <div className="space-y-0.5 text-center">
-          {game.status === 'won' ? (
-            <>
-              <p className="text-base">🎉</p>
-              <p className="text-sm font-semibold">
-                {isDrawer ? 'They guessed it!' : 'You got it!'}
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-base">😢</p>
-              <p className="text-sm font-semibold">
-                {isDrawer ? 'They ran out of guesses!' : 'Better luck next time!'}
-              </p>
-            </>
-          )}
-          <p className="text-xs text-muted-foreground">
-            The word was <span className="font-bold text-foreground">"{game.word}"</span>
-          </p>
-          <p className="pt-0.5 text-[11px] text-muted-foreground">
-            Your score: <span className="font-bold text-primary">{gamePoints} pts</span>
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
 interface MessageBubbleProps {
   message: Message;
   isMine: boolean;
@@ -532,8 +428,6 @@ interface MessageBubbleProps {
   onSwipeReply?: (message: Message) => void;
   /** stop an in-progress live location share (sender only) */
   onStopLiveLocation?: (message: Message) => void;
-  /** submit a guess for an active draw-and-guess game (guesser only) */
-  onGuess?: (msgId: string, guess: string) => void;
   /** play the spring "pop" entrance — only for genuinely new messages, not for
    *  older rows re-mounted by windowed scrolling / jump-to-quote */
   animateIn?: boolean;
@@ -556,7 +450,6 @@ export function MessageBubble({
   onDoubleTapReact,
   onSwipeReply,
   onStopLiveLocation,
-  onGuess,
   animateIn = true,
 }: MessageBubbleProps) {
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -808,9 +701,6 @@ export function MessageBubble({
           </motion.span>
         )}
       </div>
-        {message.game && (
-          <GameCard message={message} isMine={isMine} onGuess={onGuess} />
-        )}
         {isMine && message.status === 'failed' && (
           <button
             onClick={(e) => {

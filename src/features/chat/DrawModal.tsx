@@ -18,13 +18,9 @@ interface DrawModalProps {
     open: boolean;
     onClose: () => void;
     onSend: (media: MediaAttachment, blob: Blob) => void;
-    /** when set, the modal is in game-mode: shows the secret word to the drawer
-     *  and calls onSendGame instead of onSend so the game field is attached */
-    gameWord?: string;
-    onSendGame?: (media: MediaAttachment, blob: Blob, word: string) => void;
 }
 
-export function DrawModal({ open, onClose, onSend, gameWord, onSendGame }: DrawModalProps) {
+export function DrawModal({ open, onClose, onSend }: DrawModalProps) {
     const canvasRef = useRef<ReactSketchCanvasRef>(null);
     const [color, setColor] = useState(COLORS[1]);
     const [erasing, setErasing] = useState(false);
@@ -58,11 +54,7 @@ export function DrawModal({ open, onClose, onSend, gameWord, onSendGame }: DrawM
                 mimeType: 'image/png',
                 sticker: true,
             };
-            if (gameWord && onSendGame) {
-                onSendGame(media, blob, gameWord);
-            } else {
-                onSend(media, blob);
-            }
+            onSend(media, blob);
             onClose();
         } catch {
             toast.error('Could not save the drawing');
@@ -75,16 +67,8 @@ export function DrawModal({ open, onClose, onSend, gameWord, onSendGame }: DrawM
         <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
             <DialogContent className="max-w-md gap-3 p-4">
                 <DialogHeader>
-                    <DialogTitle>{gameWord ? '🎨 Draw a word' : 'Draw'}</DialogTitle>
+                    <DialogTitle>Draw</DialogTitle>
                 </DialogHeader>
-
-                {gameWord && (
-                    <div className="rounded-xl bg-primary/10 px-4 py-2.5 text-center">
-                        <p className="text-[11px] uppercase tracking-widest text-primary/60">Your secret word</p>
-                        <p className="text-2xl font-bold text-primary">{gameWord}</p>
-                        <p className="text-[11px] text-muted-foreground">Don't say it — draw it!</p>
-                    </div>
-                )}
 
                 <div className="overflow-hidden rounded-xl border bg-white">
                     <ReactSketchCanvas

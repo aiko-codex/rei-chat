@@ -135,17 +135,6 @@ export interface Message {
      *  since only the sender's device knows its own foreground state. */
     paused?: boolean;
   };
-  /** Pictionary-style draw-and-guess mini-game attached to a drawing message.
-   *  The word is inside the E2E-encrypted payload (both can technically decrypt
-   *  it but the UI hides it from the guesser until the game resolves). Game
-   *  state (status + guessesLeft) is synced via meta overlay `game:<msgId>`. */
-  game?: {
-    word: string;
-    status: 'active' | 'won' | 'lost';
-    guessesLeft: number;
-    /** senderId of the person who drew — used to determine drawer vs. guesser */
-    drawerId: string;
-  };
 }
 
 /** a shared anniversary/birthday/important date for a conversation, synced via
@@ -180,5 +169,6 @@ export type Screen =
   | 'call'
   | 'voice-channel'
   | 'truth-dare'
+  | 'draw-guess'
   | 'settings'
   | 'notifications';
