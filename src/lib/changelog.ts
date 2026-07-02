@@ -24,6 +24,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.15.1',
+    date: '2026-07-02',
+    title: 'Truth or Dare: way more prompts',
+    changes: [
+      { kind: 'improve', text: 'Every spice level now has 40+ more truths and dares — 56 each instead of 16' },
+    ],
+  },
+  {
     version: '0.15.0',
     date: '2026-07-02',
     title: '"Play together" cleaned up',
